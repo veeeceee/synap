@@ -8,8 +8,12 @@ Engram manages three types of memory — semantic, procedural, and episodic — 
 
 ```bash
 pip install engram
-# or
-uv add engram
+
+# With Kùzu for persistent graph storage (recommended)
+pip install engram[kuzu]
+
+# With uv
+uv add engram --extra kuzu
 ```
 
 ## Quick Start
@@ -58,12 +62,43 @@ memory.record_outcome(
 )
 ```
 
+## Persistence
+
+By default, the graph lives in memory. Pass a storage backend for persistence:
+
+```python
+from engram.backends.kuzu import KuzuBackend
+
+backend = KuzuBackend("./agent_memory", embedding_dim=768)
+memory = CognitiveMemory(
+    embedding_provider=your_embedder,
+    llm_provider=your_llm,
+    backend=backend,  # Knowledge, episodes, and procedures survive restarts
+)
+```
+
+| Backend | Graph traversal | Vector search | Persistence |
+|---|---|---|---|
+| In-memory (default) | Python BFS | Python cosine | None |
+| `KuzuBackend` | Native Cypher | Native `array_cosine_similarity` | File-based |
+| `SQLiteBackend` | Python BFS | Python cosine | File-based |
+
 ## Documentation
 
 - [Architecture & Concepts](docs/architecture.md) — How the three memory subsystems work and why
 - [API Reference](docs/api.md) — Complete interface documentation
 - [Bootstrap Guide](docs/bootstrap.md) — Cold start: seeding memory from existing data
 - [Examples](docs/examples.md) — Healthcare, coding agents, data pipelines
+
+## How It Works
+
+**Semantic memory** stores facts as a knowledge graph. Retrieval is graph traversal from entry points — related facts come together with relationships explicit, unrelated facts are excluded by topology.
+
+**Procedural memory** maps task types to output schemas where field ordering *is* the procedure. The model must generate intermediate reasoning before conclusions. Enforced structurally, not instructionally.
+
+**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are boosted during retrieval (more learning signal). Over time, repeated patterns consolidate into semantic facts or procedural amendments.
+
+All three operate on a shared typed property graph. Edges cross partitions — this is how consolidation links episodic experiences to semantic facts without a separate join mechanism.
 
 ## Design Specification
 
