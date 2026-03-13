@@ -172,32 +172,9 @@ class SemanticMemory:
         if structural:
             return structural
 
-        # Embedding similarity fallback
+        # Embedding similarity fallback — delegates to graph layer
+        # (native vector search on Kùzu, Python cosine on MemoryGraph)
         query_embedding = self._embedder.embed(query)
-        return self._similarity_search(query_embedding, limit=limit)
-
-    def _similarity_search(
-        self, embedding: list[float], limit: int = 3
-    ) -> list[MemoryNode]:
-        """Find most similar semantic nodes by cosine similarity."""
-        candidates: list[tuple[float, MemoryNode]] = []
-        for node in self._graph.query(node_type=MemoryType.SEMANTIC, limit=1000):
-            if node.embedding is None:
-                continue
-            sim = _cosine_similarity(embedding, node.embedding)
-            candidates.append((sim, node))
-
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        return [node for _, node in candidates[:limit]]
-
-
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute cosine similarity between two vectors."""
-    if len(a) != len(b) or len(a) == 0:
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+        return self._graph.similarity_search(
+            query_embedding, node_type=MemoryType.SEMANTIC, limit=limit
+        )

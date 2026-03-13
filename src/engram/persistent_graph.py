@@ -254,6 +254,20 @@ class PersistentGraph:
                 return True
         return False
 
+    def similarity_search(
+        self,
+        embedding: list[float],
+        node_type: MemoryType | None = None,
+        limit: int = 10,
+    ) -> list[MemoryNode]:
+        """Delegates to backend's native similarity search."""
+        results = self._backend.similarity_search(
+            embedding=embedding,
+            node_type=node_type.value if node_type else None,
+            limit=limit,
+        )
+        return [_dict_to_node(d) for d in results]
+
     def close(self) -> None:
         if hasattr(self._backend, "close"):
             self._backend.close()

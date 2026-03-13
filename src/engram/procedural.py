@@ -82,27 +82,18 @@ class ProceduralMemory:
                 if self._is_active(proc.id):
                     return proc
 
-        # Embedding similarity fallback
+        # Embedding similarity fallback — delegates to graph layer
         query_embedding = self._embedder.embed(task_description)
-        best_score = -1.0
-        best_proc: Procedure | None = None
+        similar = self._graph.similarity_search(
+            query_embedding, node_type=MemoryType.PROCEDURAL, limit=5
+        )
 
-        for proc in self._procedures.values():
-            if not self._is_active(proc.id):
-                continue
-            node = self._graph.get_node(proc.id)
-            if node is None or node.embedding is None:
-                continue
-            sim = _cosine_similarity(query_embedding, node.embedding)
-            if sim > best_score:
-                best_score = sim
-                best_proc = proc
+        for node in similar:
+            proc = self._procedures.get(node.id)
+            if proc and self._is_active(proc.id):
+                return proc
 
-        # Require minimum similarity
-        if best_score < 0.3:
-            return None
-
-        return best_proc
+        return None
 
     def build_schema(
         self,
@@ -170,12 +161,3 @@ class ProceduralMemory:
         return "; ".join(hints) if hints else ""
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    if len(a) != len(b) or len(a) == 0:
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)

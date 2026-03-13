@@ -253,3 +253,32 @@ class MemoryGraph:
             if edge and edge.relation_type == relation_type:
                 return True
         return False
+
+    def similarity_search(
+        self,
+        embedding: list[float],
+        node_type: MemoryType | None = None,
+        limit: int = 10,
+    ) -> list[MemoryNode]:
+        """Brute-force cosine similarity search over nodes with embeddings."""
+        candidates: list[tuple[float, MemoryNode]] = []
+        for node in self._nodes.values():
+            if node_type is not None and node.node_type != node_type:
+                continue
+            if node.embedding is None:
+                continue
+            sim = _cosine_similarity(embedding, node.embedding)
+            candidates.append((sim, node))
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return [node for _, node in candidates[:limit]]
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b) or len(a) == 0:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)

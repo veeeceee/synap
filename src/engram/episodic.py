@@ -237,22 +237,26 @@ class EpisodicMemory:
         task_type: str | None = None,
         limit: int = 10,
     ) -> list[tuple[float, MemoryNode]]:
-        """Find cue nodes matching a query, optionally filtered by task type."""
+        """Find cue nodes matching a query, optionally filtered by task type.
+
+        Delegates similarity search to the graph layer (native vector
+        search on Kùzu, Python cosine on MemoryGraph).
+        """
         query_embedding = self._embedder.embed(query)
 
-        candidates: list[tuple[float, MemoryNode]] = []
-        cue_nodes = self._graph.query(
-            node_type=MemoryType.EPISODIC,
-            filters={"role": "cue"},
-            limit=500,
+        # Fetch more than needed to allow for task_type/role filtering
+        similar = self._graph.similarity_search(
+            query_embedding, node_type=MemoryType.EPISODIC, limit=limit * 5
         )
 
-        for node in cue_nodes:
+        candidates: list[tuple[float, MemoryNode]] = []
+        for node in similar:
+            if node.metadata.get("role") != "cue":
+                continue
             if task_type and node.metadata.get("task_type") != task_type:
                 continue
-            if node.embedding is None:
-                continue
-            sim = _cosine_similarity(query_embedding, node.embedding)
+            # Compute actual cosine score for failure-boosting math
+            sim = _cosine_similarity(query_embedding, node.embedding) if node.embedding else 0.0
             candidates.append((sim, node))
 
         candidates.sort(key=lambda x: x[0], reverse=True)

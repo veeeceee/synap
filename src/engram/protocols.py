@@ -98,3 +98,9 @@ class GraphStore(Protocol):
         relation_type: str | None = None,
     ) -> list[MemoryEdge]: ...
     def has_incoming_edge(self, node_id: str, relation_type: str) -> bool: ...
+    def similarity_search(
+        self,
+        embedding: list[float],
+        node_type: MemoryType | None = None,
+        limit: int = 10,
+    ) -> list[MemoryNode]: ...
