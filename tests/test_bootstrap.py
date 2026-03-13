@@ -61,7 +61,6 @@ def _make_bootstrap():
     semantic = SemanticMemory(graph=graph, embedding_provider=embedder)
     episodic = EpisodicMemory(graph=graph, embedding_provider=embedder)
     bootstrap = Bootstrap(
-        graph=graph,
         semantic=semantic,
         episodic=episodic,
         embedding_provider=embedder,

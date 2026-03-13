@@ -6,11 +6,16 @@ A prior auth agent must follow regulatory procedures exactly. Skipping steps (li
 
 ```python
 from engram import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome
+from engram.backends.kuzu import KuzuBackend
+
+# Persistent backend — payer knowledge and episode history survive restarts
+backend = KuzuBackend("./prior_auth_memory", embedding_dim=768)
 
 memory = CognitiveMemory(
     embedding_provider=your_embedder,
     llm_provider=your_llm,
     capacity=CapacityHints(max_context_tokens=8192, recommended_chunk_tokens=3000),
+    backend=backend,
 )
 
 # Register the prior auth procedure

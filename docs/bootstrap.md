@@ -137,11 +137,16 @@ Recommended sequence:
 
 ```python
 from engram import CognitiveMemory, CapacityHints
+from engram.backends.kuzu import KuzuBackend
+
+# Use a persistent backend so bootstrap data survives restarts
+backend = KuzuBackend("./agent_memory", embedding_dim=768)
 
 memory = CognitiveMemory(
     embedding_provider=your_embedder,
     llm_provider=your_llm,
     capacity=CapacityHints(max_context_tokens=8192),
+    backend=backend,
 )
 
 # 1. Bootstrap procedures

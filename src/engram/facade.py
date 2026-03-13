@@ -97,7 +97,6 @@ class CognitiveMemory:
         )
 
         self._bootstrap = Bootstrap(
-            graph=self._graph,
             semantic=self._semantic,
             episodic=self._episodic,
             embedding_provider=embedding_provider,

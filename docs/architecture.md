@@ -118,7 +118,7 @@ The active procedure is always the one with no incoming `supersedes` edge.
 
 ## The Shared Graph
 
-All three subsystems operate on a single `MemoryGraph` — a typed property graph where nodes are partitioned by type but edges can cross partitions. This is how consolidation creates links between episodic experiences and semantic facts without a separate join mechanism.
+All three subsystems operate on a single graph — a typed property graph where nodes are partitioned by type but edges can cross partitions. This is how consolidation creates links between episodic experiences and semantic facts without a separate join mechanism.
 
 ```
 [episodic: "failed auth for knee replacement"]
@@ -126,6 +126,33 @@ All three subsystems operate on a single `MemoryGraph` — a typed property grap
 [semantic: "Aetna requires step therapy documentation"]
     --step_therapy_before-->
 [semantic: "Physical therapy 6 weeks"]
+```
+
+Both implementations satisfy the `GraphStore` protocol:
+
+- **`MemoryGraph`** — in-memory, zero dependencies, good for testing and short-lived agents
+- **`PersistentGraph`** — wraps a `StorageBackend`, single source of truth on disk
+
+## Storage Backends
+
+Pass a backend to `CognitiveMemory` for persistence. Without one, everything stays in-memory.
+
+| Backend | Graph traversal | Vector search | Persistence | Dependencies |
+|---|---|---|---|---|
+| `MemoryGraph` (default) | Python BFS | Python cosine | None | None |
+| `KuzuBackend` | Native Cypher variable-length paths | Native `array_cosine_similarity` | File-based | `kuzu` |
+| `SQLiteBackend` | Python BFS | Python cosine | File-based | `sqlite3` (stdlib) |
+
+Kùzu is the recommended persistent backend — embedded (no server), native graph traversal via Cypher, and native vector similarity. Install with `pip install engram[kuzu]`.
+
+```python
+# In-memory (default)
+memory = CognitiveMemory(embedding_provider=embedder, llm_provider=llm)
+
+# Persistent with Kùzu
+from engram.backends.kuzu import KuzuBackend
+backend = KuzuBackend("./agent_memory", embedding_dim=768)
+memory = CognitiveMemory(embedding_provider=embedder, llm_provider=llm, backend=backend)
 ```
 
 ## Provider Model

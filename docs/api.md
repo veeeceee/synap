@@ -13,6 +13,20 @@ memory = CognitiveMemory(
     capacity=CapacityHints(...),       # Optional: model-agnostic budget hints
     consolidation_config=config,       # Optional: consolidation tuning
     utility_decay_rate=0.01,           # Optional: how fast unused nodes fade
+    backend=backend,                   # Optional: StorageBackend for persistence
+)
+```
+
+Without a `backend`, the graph is in-memory only. Pass a `KuzuBackend` or `SQLiteBackend` for persistence:
+
+```python
+from engram.backends.kuzu import KuzuBackend
+
+backend = KuzuBackend("./agent_memory", embedding_dim=768)
+memory = CognitiveMemory(
+    embedding_provider=embedder,
+    llm_provider=llm,
+    backend=backend,
 )
 ```
 
@@ -101,7 +115,7 @@ memory.semantic     # SemanticMemory
 memory.procedural   # ProceduralMemory
 memory.episodic     # EpisodicMemory
 memory.bootstrap    # Bootstrap (cold start helpers)
-memory.graph        # MemoryGraph (the underlying graph)
+memory.graph        # GraphStore (MemoryGraph or PersistentGraph)
 ```
 
 ---

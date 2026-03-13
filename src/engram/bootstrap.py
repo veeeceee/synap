@@ -7,14 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from engram.episodic import EpisodicMemory
-from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider
+from engram.protocols import EmbeddingProvider, LLMProvider
 from engram.semantic import SemanticMemory
 from engram.types import (
     Episode,
     EpisodeOutcome,
-    MemoryNode,
-    MemoryEdge,
-    MemoryType,
     Procedure,
 )
 
@@ -106,13 +103,11 @@ class Bootstrap:
 
     def __init__(
         self,
-        graph: GraphStore,
         semantic: SemanticMemory,
         episodic: EpisodicMemory,
         embedding_provider: EmbeddingProvider,
         llm_provider: LLMProvider,
     ) -> None:
-        self._graph = graph
         self._semantic = semantic
         self._episodic = episodic
         self._embedder = embedding_provider
