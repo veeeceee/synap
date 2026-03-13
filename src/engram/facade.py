@@ -9,8 +9,9 @@ from engram.bootstrap import Bootstrap
 from engram.consolidation import ConsolidationEngine, ConsolidationConfig
 from engram.episodic import EpisodicMemory
 from engram.graph import MemoryGraph
+from engram.persistent_graph import PersistentGraph
 from engram.procedural import ProceduralMemory
-from engram.protocols import EmbeddingProvider, LLMProvider
+from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider, StorageBackend
 from engram.semantic import SemanticMemory
 from engram.types import (
     CapacityHints,
@@ -60,11 +61,19 @@ class CognitiveMemory:
         capacity: CapacityHints | None = None,
         consolidation_config: ConsolidationConfig | None = None,
         utility_decay_rate: float = 0.01,
+        backend: StorageBackend | None = None,
     ) -> None:
         self._capacity = capacity or CapacityHints()
         self._llm = llm_provider
 
-        self._graph = MemoryGraph(utility_decay_rate=utility_decay_rate)
+        self._graph: GraphStore
+        if backend is not None:
+            self._graph = PersistentGraph(
+                backend=backend,
+                utility_decay_rate=utility_decay_rate,
+            )
+        else:
+            self._graph = MemoryGraph(utility_decay_rate=utility_decay_rate)
 
         self._semantic = SemanticMemory(
             graph=self._graph,
@@ -250,7 +259,7 @@ class CognitiveMemory:
         return self._bootstrap
 
     @property
-    def graph(self) -> MemoryGraph:
+    def graph(self) -> GraphStore:
         return self._graph
 
     # --- Lifecycle ---

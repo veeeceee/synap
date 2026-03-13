@@ -1,0 +1,227 @@
+"""Tests for PersistentGraph — runs subsystem tests through a Kùzu backend."""
+
+from pathlib import Path
+
+import pytest
+
+from engram.backends.kuzu import KuzuBackend
+from engram.persistent_graph import PersistentGraph
+from engram.types import MemoryEdge, MemoryNode, MemoryType
+
+
+@pytest.fixture
+def pgraph(tmp_path: Path) -> PersistentGraph:
+    backend = KuzuBackend(tmp_path / "test_graph", embedding_dim=8)
+    pg = PersistentGraph(backend=backend)
+    yield pg
+    backend.close()
+
+
+def _node(
+    id: str = "n1",
+    content: str = "test fact",
+    node_type: MemoryType = MemoryType.SEMANTIC,
+    embedding: list[float] | None = None,
+) -> MemoryNode:
+    return MemoryNode(
+        id=id,
+        content=content,
+        node_type=node_type,
+        embedding=embedding or [0.1] * 8,
+    )
+
+
+def _edge(
+    id: str = "e1",
+    source_id: str = "n1",
+    target_id: str = "n2",
+    relation_type: str = "related_to",
+) -> MemoryEdge:
+    return MemoryEdge(
+        id=id,
+        source_id=source_id,
+        target_id=target_id,
+        relation_type=relation_type,
+    )
+
+
+def test_add_and_get_node(pgraph: PersistentGraph):
+    node = _node("n1", content="hello world")
+    pgraph.add_node(node)
+
+    loaded = pgraph.get_node("n1")
+    assert loaded is not None
+    assert loaded.content == "hello world"
+    assert loaded.node_type == MemoryType.SEMANTIC
+
+
+def test_get_nonexistent_node(pgraph: PersistentGraph):
+    assert pgraph.get_node("nope") is None
+
+
+def test_add_edge_validates_nodes(pgraph: PersistentGraph):
+    with pytest.raises(KeyError):
+        pgraph.add_edge(_edge("e1", "missing_a", "missing_b"))
+
+
+def test_add_and_traverse(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1"))
+    pgraph.add_node(_node("n2"))
+    pgraph.add_node(_node("n3"))
+    pgraph.add_edge(_edge("e1", "n1", "n2"))
+    pgraph.add_edge(_edge("e2", "n2", "n3"))
+
+    result = pgraph.traverse("n1", max_depth=1)
+    ids = {r.id for r in result}
+    assert "n2" in ids
+    assert "n3" not in ids
+
+    result = pgraph.traverse("n1", max_depth=2)
+    ids = {r.id for r in result}
+    assert "n2" in ids
+    assert "n3" in ids
+
+
+def test_query_by_type(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1", node_type=MemoryType.SEMANTIC))
+    pgraph.add_node(_node("n2", node_type=MemoryType.EPISODIC))
+    pgraph.add_node(_node("n3", node_type=MemoryType.SEMANTIC))
+
+    semantic = pgraph.query(node_type=MemoryType.SEMANTIC)
+    assert len(semantic) == 2
+
+    episodic = pgraph.query(node_type=MemoryType.EPISODIC)
+    assert len(episodic) == 1
+
+
+def test_query_with_filters(pgraph: PersistentGraph):
+    n1 = _node("n1")
+    n1.metadata = {"tag": "important"}
+    pgraph.add_node(n1)
+
+    n2 = _node("n2")
+    n2.metadata = {"tag": "trivial"}
+    pgraph.add_node(n2)
+
+    results = pgraph.query(filters={"tag": "important"})
+    assert len(results) == 1
+    assert results[0].id == "n1"
+
+
+def test_remove_node_cleans_edges(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1"))
+    pgraph.add_node(_node("n2"))
+    pgraph.add_edge(_edge("e1", "n1", "n2"))
+
+    pgraph.remove_node("n1")
+    assert pgraph.get_node("n1") is None
+
+    # n2's edges should be gone too
+    result = pgraph.traverse("n2", max_depth=1)
+    assert len(result) == 0
+
+
+def test_edges_between(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1"))
+    pgraph.add_node(_node("n2"))
+    pgraph.add_edge(_edge("e1", "n1", "n2", "causes"))
+    pgraph.add_edge(_edge("e2", "n1", "n2", "related_to"))
+
+    edges = pgraph.edges_between("n1", "n2")
+    assert len(edges) == 2
+
+    causal = pgraph.edges_between("n1", "n2", relation_type="causes")
+    assert len(causal) == 1
+    assert causal[0].relation_type == "causes"
+
+
+def test_has_incoming_edge(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1"))
+    pgraph.add_node(_node("n2"))
+    pgraph.add_edge(_edge("e1", "n1", "n2", "supersedes"))
+
+    assert pgraph.has_incoming_edge("n2", "supersedes") is True
+    assert pgraph.has_incoming_edge("n1", "supersedes") is False
+
+
+def test_node_count(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1", node_type=MemoryType.SEMANTIC))
+    pgraph.add_node(_node("n2", node_type=MemoryType.EPISODIC))
+
+    assert pgraph.node_count() == 2
+    assert pgraph.node_count(MemoryType.SEMANTIC) == 1
+
+
+def test_edge_count(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1"))
+    pgraph.add_node(_node("n2"))
+    pgraph.add_edge(_edge("e1", "n1", "n2", "causes"))
+    pgraph.add_edge(_edge("e2", "n1", "n2", "related_to"))
+
+    assert pgraph.edge_count() == 2
+    assert pgraph.edge_count("causes") == 1
+
+
+def test_update_utility(pgraph: PersistentGraph):
+    pgraph.add_node(_node("n1"))
+    original = pgraph.get_node("n1")
+    original_count = original.access_count
+
+    pgraph.update_utility("n1")
+
+    updated = pgraph.get_node("n1")
+    assert updated.access_count == original_count + 1
+
+
+def test_facade_with_kuzu_backend(tmp_path: Path):
+    """Full integration: CognitiveMemory with Kùzu backend."""
+    from tests.conftest import FakeEmbedder, FakeLLM
+    from engram.facade import CognitiveMemory
+    from engram.types import EpisodeOutcome, Procedure
+
+    backend = KuzuBackend(tmp_path / "facade_test", embedding_dim=8)
+
+    cm = CognitiveMemory(
+        embedding_provider=FakeEmbedder(),
+        llm_provider=FakeLLM(),
+        backend=backend,
+    )
+
+    # Register a procedure
+    proc = Procedure(
+        task_type="diagnosis",
+        description="Medical diagnosis procedure",
+        schema={
+            "symptoms": {"type": "string"},
+            "reasoning": {"type": "string"},
+            "diagnosis": {"type": "string"},
+        },
+        field_ordering=["symptoms", "reasoning", "diagnosis"],
+    )
+    cm.procedural.register(proc)
+
+    # Store semantic context
+    cm.semantic.store("Fever and cough suggest respiratory infection")
+
+    # Prepare a call
+    ctx = cm.prepare_call("diagnosis for patient with fever")
+    assert ctx.procedure is not None
+    assert ctx.output_schema is not None
+
+    # Record an outcome
+    episode_id = cm.record_outcome(
+        task_description="diagnosis for patient with fever",
+        input_data={"symptoms": "fever, cough"},
+        output={"diagnosis": "respiratory infection"},
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="diagnosis",
+    )
+    assert episode_id is not None
+
+    # Stats should reflect persisted state
+    stats = cm.stats()
+    assert stats.semantic_nodes >= 1
+    assert stats.procedural_nodes >= 1
+    assert stats.total_episodes == 1
+
+    backend.close()

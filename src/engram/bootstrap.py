@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from engram.episodic import EpisodicMemory
-from engram.graph import MemoryGraph
-from engram.protocols import EmbeddingProvider, LLMProvider
+from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider
 from engram.semantic import SemanticMemory
 from engram.types import (
     Episode,
@@ -107,7 +106,7 @@ class Bootstrap:
 
     def __init__(
         self,
-        graph: MemoryGraph,
+        graph: GraphStore,
         semantic: SemanticMemory,
         episodic: EpisodicMemory,
         embedding_provider: EmbeddingProvider,

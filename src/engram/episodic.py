@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from engram.graph import MemoryGraph
-from engram.protocols import EmbeddingProvider
+from engram.protocols import EmbeddingProvider, GraphStore
 from engram.types import (
     CapacityHints,
     Episode,
@@ -43,7 +42,7 @@ class EpisodicMemory:
 
     def __init__(
         self,
-        graph: MemoryGraph,
+        graph: GraphStore,
         embedding_provider: EmbeddingProvider,
     ) -> None:
         self._graph = graph

@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from engram.graph import MemoryGraph
-from engram.protocols import LLMProvider
+from engram.protocols import GraphStore, LLMProvider
 from engram.types import (
     ConsolidationEvent,
     ConsolidationTrigger,
@@ -54,7 +53,7 @@ class ConsolidationEngine:
 
     def __init__(
         self,
-        graph: MemoryGraph,
+        graph: GraphStore,
         semantic: SemanticMemory,
         procedural: ProceduralMemory,
         episodic: EpisodicMemory,

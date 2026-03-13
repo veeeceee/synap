@@ -12,8 +12,9 @@ from engram.types import (
     PreparedContext,
     Procedure,
 )
-from engram.protocols import EmbeddingProvider, LLMProvider, StorageBackend
+from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider, StorageBackend
 from engram.graph import MemoryGraph
+from engram.persistent_graph import PersistentGraph
 from engram.semantic import SemanticMemory
 from engram.procedural import ProceduralMemory
 from engram.episodic import EpisodicMemory
@@ -32,11 +33,13 @@ __all__ = [
     "EpisodeOutcome",
     "EmbeddingProvider",
     "EvaluationReport",
+    "GraphStore",
     "LLMProvider",
     "MemoryEdge",
     "MemoryGraph",
     "MemoryNode",
     "MemoryStats",
+    "PersistentGraph",
     "MemoryType",
     "PreparedContext",
     "Procedure",
