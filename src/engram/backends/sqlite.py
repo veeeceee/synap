@@ -193,6 +193,42 @@ class SQLiteBackend:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [data for _, data in scored[:limit]]
 
+    def traverse(
+        self,
+        start_id: str,
+        edge_types: list[str] | None = None,
+        max_depth: int = 2,
+        max_nodes: int = 50,
+    ) -> list[dict[str, Any]]:
+        """BFS traversal from start node. Not graph-native — walks edges in Python."""
+        visited: set[str] = {start_id}
+        frontier = [start_id]
+        results: list[dict[str, Any]] = []
+
+        for _ in range(max_depth):
+            next_frontier: list[str] = []
+            for nid in frontier:
+                edges = self.load_edges(nid)
+                for edge in edges:
+                    if edge_types and edge["relation_type"] not in edge_types:
+                        continue
+                    neighbor_id = (
+                        edge["target_id"] if edge["source_id"] == nid else edge["source_id"]
+                    )
+                    if neighbor_id not in visited:
+                        visited.add(neighbor_id)
+                        node = self.load_node(neighbor_id)
+                        if node:
+                            results.append(node)
+                            if len(results) >= max_nodes:
+                                return results
+                            next_frontier.append(neighbor_id)
+            frontier = next_frontier
+            if not frontier:
+                break
+
+        return results
+
     def close(self) -> None:
         self._conn.close()
 

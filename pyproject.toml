@@ -11,9 +11,11 @@ dependencies = []
 
 [project.optional-dependencies]
 sqlite = ["aiosqlite>=0.20.0"]
+kuzu = ["kuzu>=0.8.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "kuzu>=0.8.0",
 ]
 
 [tool.hatch.build.targets.wheel]

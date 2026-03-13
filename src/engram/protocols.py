@@ -49,3 +49,10 @@ class StorageBackend(Protocol):
         node_type: str | None = None,
         limit: int = 10,
     ) -> list[dict[str, Any]]: ...
+    def traverse(
+        self,
+        start_id: str,
+        edge_types: list[str] | None = None,
+        max_depth: int = 2,
+        max_nodes: int = 50,
+    ) -> list[dict[str, Any]]: ...
