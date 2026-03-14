@@ -122,6 +122,16 @@ class ConsolidationEvent:
 
 
 @dataclass
+class DomainResult:
+    """A piece of domain knowledge surfaced by a SemanticDomain adapter."""
+
+    content: str
+    relevance: float = 1.0
+    source_id: str = field(default_factory=_uuid)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class PreparedContext:
     """Everything needed to build an LLM call, returned by CognitiveMemory.prepare_call()."""
 
@@ -130,9 +140,8 @@ class PreparedContext:
     output_schema: dict[str, Any] | None = None
     system_prompt_fragment: str | None = None
 
-    # Semantic
-    semantic_context: list[MemoryNode] = field(default_factory=list)
-    semantic_summary: str | None = None
+    # Domain knowledge
+    domain_context: list[DomainResult] = field(default_factory=list)
 
     # Episodic
     relevant_episodes: list[Episode] = field(default_factory=list)

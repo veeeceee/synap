@@ -177,17 +177,21 @@ async def test_facade_with_kuzu_backend(tmp_path: Path):
     """Full integration: CognitiveMemory with Kùzu backend."""
     from tests.conftest import FakeEmbedder, FakeLLM
     from engram.facade import CognitiveMemory
+    from engram.semantic import SemanticMemory
     from engram.types import EpisodeOutcome, Procedure
 
     backend = KuzuBackend(tmp_path / "facade_test", embedding_dim=8)
+    embedder = FakeEmbedder()
+    pg = PersistentGraph(backend=backend)
+    domain = SemanticMemory(graph=pg, embedding_provider=embedder)
 
     cm = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
+        domain=domain,
+        embedding_provider=embedder,
         llm_provider=FakeLLM(),
-        backend=backend,
+        graph=pg,
     )
 
-    # Register a procedure
     proc = Procedure(
         task_type="diagnosis",
         description="Medical diagnosis procedure",
@@ -200,15 +204,12 @@ async def test_facade_with_kuzu_backend(tmp_path: Path):
     )
     await cm.procedural.register(proc)
 
-    # Store semantic context
-    await cm.semantic.store("Fever and cough suggest respiratory infection")
+    await domain.store("Fever and cough suggest respiratory infection")
 
-    # Prepare a call
     ctx = await cm.prepare_call("diagnosis for patient with fever")
     assert ctx.procedure is not None
     assert ctx.output_schema is not None
 
-    # Record an outcome
     episode_id = await cm.record_outcome(
         task_description="diagnosis for patient with fever",
         input_data={"symptoms": "fever, cough"},
@@ -218,7 +219,6 @@ async def test_facade_with_kuzu_backend(tmp_path: Path):
     )
     assert episode_id is not None
 
-    # Stats should reflect persisted state
     stats = await cm.stats()
     assert stats.semantic_nodes >= 1
     assert stats.procedural_nodes >= 1

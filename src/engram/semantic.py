@@ -1,4 +1,10 @@
-"""Semantic memory — knowledge graph of facts, concepts, and relations."""
+"""Semantic memory — knowledge graph of facts, concepts, and relations.
+
+SemanticMemory is the default SemanticDomain implementation. It stores
+generic text nodes with embeddings and retrieves via graph traversal.
+Projects with domain-specific knowledge schemas implement SemanticDomain
+directly.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +12,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from engram.protocols import EmbeddingProvider, GraphStore
-from engram.types import CapacityHints, MemoryEdge, MemoryNode, MemoryType
+from engram.types import CapacityHints, DomainResult, MemoryEdge, MemoryNode, MemoryType
 
 
 @dataclass
 class SemanticResult:
-    """Result of a semantic retrieval — a connected subgraph."""
+    """Result of a semantic graph search — a connected subgraph."""
 
     nodes: list[MemoryNode] = field(default_factory=list)
     edges: list[MemoryEdge] = field(default_factory=list)
@@ -25,12 +31,11 @@ class SemanticResult:
 
 
 class SemanticMemory:
-    """Knowledge graph with typed relations.
+    """Default SemanticDomain — generic knowledge graph with typed relations.
 
-    Retrieval is graph traversal from entry points, not flat similarity
-    search. This produces inherently selective results — related facts
-    come together with their relationships explicit, and unrelated facts
-    are excluded by topology.
+    Implements the SemanticDomain protocol (retrieve/absorb) for projects
+    that don't need domain-specific node types. Also exposes store/link/search
+    for direct graph manipulation (used by bootstrap).
     """
 
     def __init__(
@@ -40,6 +45,40 @@ class SemanticMemory:
     ) -> None:
         self._graph = graph
         self._embedder = embedding_provider
+
+    # --- SemanticDomain protocol ---
+
+    async def retrieve(
+        self,
+        task_description: str,
+        task_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[DomainResult]:
+        result = await self.search(task_description)
+        return [
+            DomainResult(
+                content=node.content,
+                relevance=node.utility_score,
+                source_id=node.id,
+                metadata=node.metadata,
+            )
+            for node in result.nodes
+        ]
+
+    async def absorb(
+        self,
+        insights: list[str],
+        source_episodes: list[MemoryNode],
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
+        if not insights:
+            return None
+        combined = " ".join(insights)
+        meta = dict(metadata or {})
+        meta["consolidated_from"] = [ep.id for ep in source_episodes]
+        return await self.store(content=combined, metadata=meta)
+
+    # --- Direct graph operations ---
 
     async def store(
         self,
@@ -88,7 +127,7 @@ class SemanticMemory:
         )
         return await self._graph.add_edge(edge)
 
-    async def retrieve(
+    async def search(
         self,
         query: str,
         relation_types: list[str] | None = None,

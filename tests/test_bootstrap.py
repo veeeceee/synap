@@ -102,7 +102,6 @@ async def test_accept_proposed_knowledge():
 
     assert len(node_ids) == 3
     assert await graph.node_count(MemoryType.SEMANTIC) == 3
-    # Edges should connect the nodes
     assert await graph.edge_count() >= 2
 
 
@@ -157,20 +156,16 @@ async def test_full_bootstrap_flow():
     """End-to-end: extract, review, accept, then use."""
     bootstrap, graph, semantic, _, _ = _make_bootstrap()
 
-    # Extract
     proposed = await bootstrap.extract_knowledge(
         texts=["Payer policies for orthopedic procedures"],
         domain_hint="healthcare",
     )
 
-    # Review (consumer would inspect proposed.summary() here)
     assert len(proposed.nodes) > 0
 
-    # Accept
     node_ids = await bootstrap.accept(proposed)
 
-    # Retrieve — should find the seeded knowledge
-    result = await semantic.retrieve("step therapy")
+    result = await semantic.search("step therapy")
     assert len(result.nodes) > 0
 
 

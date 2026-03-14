@@ -5,13 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from engram.protocols import GraphStore, LLMProvider
+from engram.protocols import GraphStore, LLMProvider, SemanticDomain
 from engram.types import (
     ConsolidationEvent,
     ConsolidationTrigger,
     Episode,
     EpisodeOutcome,
-    MemoryEdge,
     MemoryNode,
     MemoryType,
 )
@@ -19,7 +18,6 @@ from engram.types import (
 if TYPE_CHECKING:
     from engram.episodic import EpisodicMemory
     from engram.procedural import ProceduralMemory
-    from engram.semantic import SemanticMemory
 
 
 @dataclass
@@ -32,26 +30,25 @@ class ConsolidationConfig:
 @dataclass
 class ConsolidationResult:
     event: ConsolidationEvent
-    created_nodes: list[str] = field(default_factory=list)
-    created_edges: list[str] = field(default_factory=list)
+    domain_id: str | None = None
     success: bool = True
     error: str | None = None
 
 
 class ConsolidationEngine:
-    """Processes consolidation events: episodic → semantic, episodic → procedural."""
+    """Processes consolidation events: episodic → domain knowledge."""
 
     def __init__(
         self,
         graph: GraphStore,
-        semantic: SemanticMemory,
+        domain: SemanticDomain,
         procedural: ProceduralMemory,
         episodic: EpisodicMemory,
         llm_provider: LLMProvider,
         config: ConsolidationConfig | None = None,
     ) -> None:
         self._graph = graph
-        self._semantic = semantic
+        self._domain = domain
         self._procedural = procedural
         self._episodic = episodic
         self._llm = llm_provider
@@ -229,30 +226,18 @@ class ConsolidationEngine:
         )
         fact = await self._llm.generate(prompt)
 
-        node_id = await self._semantic.store(
-            content=fact.strip(),
-            metadata={"consolidated_from": [c.id for c in event.candidates]},
+        domain_id = await self._domain.absorb(
+            insights=[fact.strip()],
+            source_episodes=event.candidates,
+            metadata=event.metadata,
         )
-
-        created_edges = []
-        for candidate in event.candidates:
-            try:
-                edge_id = await self._semantic.link(
-                    source_id=node_id,
-                    target_id=candidate.id,
-                    relation_type="derived_from",
-                )
-                created_edges.append(edge_id)
-            except KeyError:
-                pass
 
         for candidate in event.candidates:
             candidate.utility_score *= 0.5
 
         return ConsolidationResult(
             event=event,
-            created_nodes=[node_id],
-            created_edges=created_edges,
+            domain_id=domain_id,
         )
 
     async def _consolidate_to_procedural(
@@ -269,17 +254,18 @@ class ConsolidationEngine:
         )
         amendment = await self._llm.generate(prompt)
 
-        node_id = await self._semantic.store(
-            content=f"Procedural amendment for {task_type}: {amendment.strip()}",
-            metadata={
-                "amendment_for": task_type,
-                "consolidated_from": [c.id for c in event.candidates],
-            },
+        meta = dict(event.metadata)
+        meta["amendment_for"] = task_type
+
+        domain_id = await self._domain.absorb(
+            insights=[f"Procedural amendment for {task_type}: {amendment.strip()}"],
+            source_episodes=event.candidates,
+            metadata=meta,
         )
 
         return ConsolidationResult(
             event=event,
-            created_nodes=[node_id],
+            domain_id=domain_id,
         )
 
     async def _merge_semantic(self, event: ConsolidationEvent) -> ConsolidationResult:
@@ -292,26 +278,19 @@ class ConsolidationEngine:
         )
         merged = await self._llm.generate(prompt)
 
-        node_id = await self._semantic.store(
-            content=merged.strip(),
-            metadata={"merged_from": [c.id for c in event.candidates]},
+        meta = dict(event.metadata)
+        meta["merged_from"] = [c.id for c in event.candidates]
+
+        domain_id = await self._domain.absorb(
+            insights=[merged.strip()],
+            source_episodes=event.candidates,
+            metadata=meta,
         )
 
-        created_edges = []
         for candidate in event.candidates:
-            try:
-                edge_id = await self._semantic.link(
-                    source_id=node_id,
-                    target_id=candidate.id,
-                    relation_type="merged_from",
-                )
-                created_edges.append(edge_id)
-            except KeyError:
-                pass
             candidate.utility_score *= 0.3
 
         return ConsolidationResult(
             event=event,
-            created_nodes=[node_id],
-            created_edges=created_edges,
+            domain_id=domain_id,
         )

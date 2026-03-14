@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from engram.types import MemoryEdge, MemoryNode, MemoryType
+    from engram.types import DomainResult, MemoryEdge, MemoryNode, MemoryType
 
 
 class EmbeddingProvider(Protocol):
@@ -59,6 +59,30 @@ class StorageBackend(Protocol):
         max_depth: int = 2,
         max_nodes: int = 50,
     ) -> list[dict[str, Any]]: ...
+
+
+class SemanticDomain(Protocol):
+    """Domain-specific semantic knowledge adapter.
+
+    The consuming project implements this to define how domain knowledge
+    is stored and retrieved. engram handles lifecycle (when to retrieve,
+    when to consolidate); the domain handles shape (what types exist,
+    how to query them).
+    """
+
+    async def retrieve(
+        self,
+        task_description: str,
+        task_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[DomainResult]: ...
+
+    async def absorb(
+        self,
+        insights: list[str],
+        source_episodes: list[MemoryNode],
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None: ...
 
 
 class GraphStore(Protocol):

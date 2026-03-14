@@ -1,6 +1,8 @@
 """Tests for CognitiveMemory facade — the integration layer."""
 
 from engram.facade import CognitiveMemory
+from engram.graph import MemoryGraph
+from engram.semantic import SemanticMemory
 from engram.types import (
     CapacityHints,
     EpisodeOutcome,
@@ -10,15 +12,25 @@ from engram.types import (
 from tests.conftest import FakeEmbedder, FakeLLM
 
 
+def _make_memory(**kwargs) -> CognitiveMemory:
+    """Helper: create CognitiveMemory with default SemanticMemory domain."""
+    graph = MemoryGraph()
+    embedder = FakeEmbedder()
+    domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+    defaults = dict(
+        domain=domain,
+        embedding_provider=embedder,
+        llm_provider=FakeLLM(),
+        graph=graph,
+    )
+    defaults.update(kwargs)
+    return CognitiveMemory(**defaults)
+
+
 async def test_full_cycle():
     """End-to-end: register procedure, prepare call, record outcome."""
-    memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
-        llm_provider=FakeLLM(),
-        capacity=CapacityHints(max_context_tokens=8192),
-    )
+    memory = _make_memory(capacity=CapacityHints(max_context_tokens=8192))
 
-    # Register a procedure
     await memory.procedural.register(
         Procedure(
             task_type="prior_auth_determination",
@@ -33,10 +45,6 @@ async def test_full_cycle():
         )
     )
 
-    # Seed semantic memory
-    await memory.semantic.store("Step therapy required before surgical intervention")
-
-    # Prepare a call
     ctx = await memory.prepare_call(
         task_description="Determine prior authorization for knee replacement",
     )
@@ -49,7 +57,6 @@ async def test_full_cycle():
         "determination",
     ]
 
-    # Record outcome
     episode_id = await memory.record_outcome(
         task_description="Prior auth for knee replacement",
         input_data={"cpt": "27447"},
@@ -60,19 +67,14 @@ async def test_full_cycle():
 
     assert episode_id is not None
 
-    # Stats should reflect the data
     stats = await memory.stats()
-    assert stats.semantic_nodes >= 1
     assert stats.procedural_nodes >= 1
     assert stats.total_episodes == 1
 
 
 async def test_prepare_call_without_procedure():
     """prepare_call works even when no procedure matches."""
-    memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
-        llm_provider=FakeLLM(),
-    )
+    memory = _make_memory()
 
     ctx = await memory.prepare_call(task_description="Do something novel")
     assert ctx.procedure is None
@@ -81,12 +83,8 @@ async def test_prepare_call_without_procedure():
 
 async def test_episodic_warnings_in_context():
     """Failed episodes generate warnings in PreparedContext."""
-    memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
-        llm_provider=FakeLLM(),
-    )
+    memory = _make_memory()
 
-    # Record a failure
     await memory.record_outcome(
         task_description="Diagnose payment webhook error",
         input_data={},
@@ -95,7 +93,6 @@ async def test_episodic_warnings_in_context():
         task_type="diagnose_bug",
     )
 
-    # Next call with similar description should get warnings
     ctx = await memory.prepare_call(
         task_description="Diagnose payment webhook error",
     )
@@ -107,12 +104,8 @@ async def test_episodic_warnings_in_context():
 async def test_consolidation_on_repeated_failures():
     """Repeated failures trigger consolidation event."""
     llm = FakeLLM()
-    memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
-        llm_provider=llm,
-    )
+    memory = _make_memory(llm_provider=llm)
 
-    # Record 3 failures for the same task type
     for i in range(3):
         await memory.record_outcome(
             task_description=f"Auth failure case {i}",
@@ -122,23 +115,17 @@ async def test_consolidation_on_repeated_failures():
             task_type="prior_auth",
         )
 
-    # Should have queued a consolidation event
     stats = await memory.stats()
     assert stats.pending_consolidation >= 1
 
-    # Process consolidation
     results = await memory.consolidate()
     assert len(results) >= 1
 
 
 async def test_evaluation_report():
     """Evaluation report tracks outcome trends."""
-    memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
-        llm_provider=FakeLLM(),
-    )
+    memory = _make_memory()
 
-    # Record a mix of outcomes
     for outcome in [
         EpisodeOutcome.SUCCESS,
         EpisodeOutcome.FAILURE,
@@ -161,33 +148,60 @@ async def test_evaluation_report():
 
 async def test_capacity_hints_limit_retrieval():
     """Small capacity hints reduce retrieval depth."""
+    graph = MemoryGraph()
+    embedder = FakeEmbedder()
+    domain = SemanticMemory(graph=graph, embedding_provider=embedder)
     memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
+        domain=domain,
+        embedding_provider=embedder,
         llm_provider=FakeLLM(),
+        graph=graph,
         capacity=CapacityHints(
             max_context_tokens=2048,
             recommended_chunk_tokens=500,
         ),
     )
 
-    # Store many semantic nodes
     for i in range(20):
-        await memory.semantic.store(f"Fact number {i} about medical procedures")
+        await domain.store(f"Fact number {i} about medical procedures")
 
     ctx = await memory.prepare_call(task_description="Medical procedure facts")
-    # With small capacity, should retrieve fewer nodes
     assert ctx.capacity_used <= 1.0
+
+
+async def test_domain_context_in_prepared_context():
+    """PreparedContext includes domain_context from SemanticDomain.retrieve."""
+    graph = MemoryGraph()
+    embedder = FakeEmbedder()
+    domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+    memory = CognitiveMemory(
+        domain=domain,
+        embedding_provider=embedder,
+        llm_provider=FakeLLM(),
+        graph=graph,
+    )
+
+    await domain.store("Important domain fact")
+
+    ctx = await memory.prepare_call(task_description="Important domain fact")
+    assert len(ctx.domain_context) > 0
+    assert any("Important domain fact" in r.content for r in ctx.domain_context)
 
 
 async def test_stats_reflect_graph_state():
     """Stats accurately reflect the current graph state."""
+    graph = MemoryGraph()
+    embedder = FakeEmbedder()
+    domain = SemanticMemory(graph=graph, embedding_provider=embedder)
     memory = CognitiveMemory(
-        embedding_provider=FakeEmbedder(),
+        domain=domain,
+        embedding_provider=embedder,
         llm_provider=FakeLLM(),
+        graph=graph,
     )
 
-    await memory.semantic.store("fact 1")
-    await memory.semantic.store("fact 2")
+    await domain.store("fact 1")
+    await domain.store("fact 2")
     await memory.procedural.register(
         Procedure(
             task_type="test",

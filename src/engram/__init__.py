@@ -4,6 +4,7 @@ from engram.types import (
     CapacityHints,
     ConsolidationEvent,
     ConsolidationTrigger,
+    DomainResult,
     Episode,
     EpisodeOutcome,
     MemoryEdge,
@@ -12,7 +13,13 @@ from engram.types import (
     PreparedContext,
     Procedure,
 )
-from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider, StorageBackend
+from engram.protocols import (
+    EmbeddingProvider,
+    GraphStore,
+    LLMProvider,
+    SemanticDomain,
+    StorageBackend,
+)
 from engram.graph import MemoryGraph
 from engram.persistent_graph import PersistentGraph
 from engram.semantic import SemanticMemory
@@ -29,9 +36,11 @@ __all__ = [
     "ConsolidationConfig",
     "ConsolidationEvent",
     "ConsolidationTrigger",
+    "DomainResult",
     "Episode",
     "EpisodeOutcome",
     "EmbeddingProvider",
+    "EpisodicMemory",
     "EvaluationReport",
     "GraphStore",
     "LLMProvider",
@@ -39,13 +48,13 @@ __all__ = [
     "MemoryGraph",
     "MemoryNode",
     "MemoryStats",
-    "PersistentGraph",
     "MemoryType",
+    "PersistentGraph",
     "PreparedContext",
     "Procedure",
-    "ProposedKnowledge",
-    "SemanticMemory",
     "ProceduralMemory",
-    "EpisodicMemory",
+    "ProposedKnowledge",
+    "SemanticDomain",
+    "SemanticMemory",
     "StorageBackend",
 ]
