@@ -17,7 +17,7 @@ class BootstrapLLM:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def generate(
+    async def generate(
         self,
         prompt: str,
         output_schema: dict[str, Any] | None = None,
@@ -69,10 +69,10 @@ def _make_bootstrap():
     return bootstrap, graph, semantic, episodic, llm
 
 
-def test_extract_knowledge():
+async def test_extract_knowledge():
     bootstrap, graph, semantic, _, llm = _make_bootstrap()
 
-    proposed = bootstrap.extract_knowledge(
+    proposed = await bootstrap.extract_knowledge(
         texts=["Medical policy document about lumbar fusion..."],
         domain_hint="healthcare prior authorization",
     )
@@ -83,10 +83,10 @@ def test_extract_knowledge():
     assert proposed.edges[0].relation_type == "requires"
 
 
-def test_extract_knowledge_summary():
+async def test_extract_knowledge_summary():
     bootstrap, *_ = _make_bootstrap()
 
-    proposed = bootstrap.extract_knowledge(texts=["Some medical text"])
+    proposed = await bootstrap.extract_knowledge(texts=["Some medical text"])
     summary = proposed.summary()
 
     assert "3 nodes" in summary
@@ -94,22 +94,22 @@ def test_extract_knowledge_summary():
     assert "Step therapy" in summary
 
 
-def test_accept_proposed_knowledge():
+async def test_accept_proposed_knowledge():
     bootstrap, graph, semantic, _, _ = _make_bootstrap()
 
-    proposed = bootstrap.extract_knowledge(texts=["Medical policy document"])
-    node_ids = bootstrap.accept(proposed)
+    proposed = await bootstrap.extract_knowledge(texts=["Medical policy document"])
+    node_ids = await bootstrap.accept(proposed)
 
     assert len(node_ids) == 3
-    assert graph.node_count(MemoryType.SEMANTIC) == 3
+    assert await graph.node_count(MemoryType.SEMANTIC) == 3
     # Edges should connect the nodes
-    assert graph.edge_count() >= 2
+    assert await graph.edge_count() >= 2
 
 
-def test_infer_procedure():
+async def test_infer_procedure():
     bootstrap, *_ = _make_bootstrap()
 
-    procedure = bootstrap.infer_procedure(
+    procedure = await bootstrap.infer_procedure(
         system_prompt="You are a medical reviewer. Assess clinical evidence...",
         example_outputs=[{"determination": "approved", "diagnosis": "M54.5"}],
     )
@@ -120,7 +120,7 @@ def test_infer_procedure():
     assert len(procedure.schema) > 0
 
 
-def test_ingest_logs():
+async def test_ingest_logs():
     bootstrap, graph, _, episodic, _ = _make_bootstrap()
 
     logs = [
@@ -144,7 +144,7 @@ def test_ingest_logs():
         },
     ]
 
-    episodes = bootstrap.ingest_logs(logs, task_type="diagnose_bug")
+    episodes = await bootstrap.ingest_logs(logs, task_type="diagnose_bug")
     assert len(episodes) == 3
     assert episodic.episode_count == 3
     assert episodes[0].outcome == EpisodeOutcome.SUCCESS
@@ -153,12 +153,12 @@ def test_ingest_logs():
     assert episodes[2].correction == "Should validate at API boundary"
 
 
-def test_full_bootstrap_flow():
+async def test_full_bootstrap_flow():
     """End-to-end: extract, review, accept, then use."""
     bootstrap, graph, semantic, _, _ = _make_bootstrap()
 
     # Extract
-    proposed = bootstrap.extract_knowledge(
+    proposed = await bootstrap.extract_knowledge(
         texts=["Payer policies for orthopedic procedures"],
         domain_hint="healthcare",
     )
@@ -167,10 +167,10 @@ def test_full_bootstrap_flow():
     assert len(proposed.nodes) > 0
 
     # Accept
-    node_ids = bootstrap.accept(proposed)
+    node_ids = await bootstrap.accept(proposed)
 
     # Retrieve — should find the seeded knowledge
-    result = semantic.retrieve("step therapy")
+    result = await semantic.retrieve("step therapy")
     assert len(result.nodes) > 0
 
 

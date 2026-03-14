@@ -18,7 +18,6 @@ class SemanticResult:
 
     @property
     def summary(self) -> str:
-        """Format retrieved facts as text for prompt injection."""
         lines = []
         for node in self.nodes:
             lines.append(f"- {node.content}")
@@ -42,39 +41,27 @@ class SemanticMemory:
         self._graph = graph
         self._embedder = embedding_provider
 
-    def store(
+    async def store(
         self,
         content: str,
         relations: list[tuple[str, str, str]] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
-        """Store a fact or concept.
-
-        Args:
-            content: The fact or concept text.
-            relations: List of (source_id, relation_type, target_id) tuples.
-                       Use the returned node ID as source or target.
-            metadata: Optional metadata dict.
-
-        Returns:
-            The ID of the created node.
-        """
-        embedding = self._embedder.embed(content)
+        embedding = await self._embedder.embed(content)
         node = MemoryNode(
             content=content,
             node_type=MemoryType.SEMANTIC,
             embedding=embedding,
             metadata=metadata or {},
         )
-        self._graph.add_node(node)
+        await self._graph.add_node(node)
 
         if relations:
             for source_id, relation_type, target_id in relations:
-                # Replace placeholder with actual node id
                 src = node.id if source_id == "__self__" else source_id
                 tgt = node.id if target_id == "__self__" else target_id
                 try:
-                    self._graph.add_edge(
+                    await self._graph.add_edge(
                         MemoryEdge(
                             source_id=src,
                             target_id=tgt,
@@ -82,27 +69,26 @@ class SemanticMemory:
                         )
                     )
                 except KeyError:
-                    pass  # Skip edges where referenced node doesn't exist yet
+                    pass
 
         return node.id
 
-    def link(
+    async def link(
         self,
         source_id: str,
         target_id: str,
         relation_type: str,
         weight: float = 1.0,
     ) -> str:
-        """Create a typed relation between existing nodes."""
         edge = MemoryEdge(
             source_id=source_id,
             target_id=target_id,
             relation_type=relation_type,
             weight=weight,
         )
-        return self._graph.add_edge(edge)
+        return await self._graph.add_edge(edge)
 
-    def retrieve(
+    async def retrieve(
         self,
         query: str,
         relation_types: list[str] | None = None,
@@ -110,16 +96,11 @@ class SemanticMemory:
         max_nodes: int = 10,
         capacity: CapacityHints | None = None,
     ) -> SemanticResult:
-        """Retrieve by graph traversal from query-matched entry points.
-
-        Strategy: structural match first (metadata/tag lookup), then
-        embedding similarity as fallback. Traverse from entry points.
-        """
         if capacity and capacity.recommended_chunk_tokens < 2000:
             max_depth = min(max_depth, 1)
             max_nodes = min(max_nodes, 5)
 
-        entry_points = self._find_entry_points(query, limit=3)
+        entry_points = await self._find_entry_points(query, limit=3)
         if not entry_points:
             return SemanticResult()
 
@@ -132,9 +113,9 @@ class SemanticMemory:
                 continue
             seen_ids.add(entry.id)
             all_nodes.append(entry)
-            self._graph.update_utility(entry.id)
+            await self._graph.update_utility(entry.id)
 
-            traversed = self._graph.traverse(
+            traversed = await self._graph.traverse(
                 start=entry.id,
                 edge_types=relation_types,
                 max_depth=max_depth,
@@ -144,27 +125,24 @@ class SemanticMemory:
                 if node.id not in seen_ids:
                     seen_ids.add(node.id)
                     all_nodes.append(node)
-                    self._graph.update_utility(node.id)
+                    await self._graph.update_utility(node.id)
 
             if len(all_nodes) >= max_nodes:
                 break
 
-        # Collect edges between retrieved nodes
         for node in all_nodes:
             for other in all_nodes:
                 if node.id == other.id:
                     continue
-                edges = self._graph.edges_between(node.id, other.id)
+                edges = await self._graph.edges_between(node.id, other.id)
                 all_edges.extend(edges)
 
         return SemanticResult(nodes=all_nodes, edges=all_edges)
 
-    def _find_entry_points(
+    async def _find_entry_points(
         self, query: str, limit: int = 3
     ) -> list[MemoryNode]:
-        """Find entry points: structural match first, embedding fallback."""
-        # Structural: check for exact metadata matches
-        structural = self._graph.query(
+        structural = await self._graph.query(
             node_type=MemoryType.SEMANTIC,
             filters={"tag": query},
             limit=limit,
@@ -172,9 +150,7 @@ class SemanticMemory:
         if structural:
             return structural
 
-        # Embedding similarity fallback — delegates to graph layer
-        # (native vector search on Kùzu, Python cosine on MemoryGraph)
-        query_embedding = self._embedder.embed(query)
-        return self._graph.similarity_search(
+        query_embedding = await self._embedder.embed(query)
+        return await self._graph.similarity_search(
             query_embedding, node_type=MemoryType.SEMANTIC, limit=limit
         )

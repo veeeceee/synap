@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,10 +35,6 @@ class EpisodicMemory:
     - Cue node: what triggered the episode
     - Content node: what happened (the agent's output)
     - Outcome node: result (success/failure/corrected)
-
-    Retrieval reconstructs episodes from the graph rather than
-    doing flat similarity search. Failed episodes are prioritized
-    because they carry more learning signal.
     """
 
     def __init__(
@@ -49,17 +46,12 @@ class EpisodicMemory:
         self._embedder = embedding_provider
         self._episodes: dict[str, Episode] = {}
 
-    def record(self, episode: Episode) -> str:
-        """Record a new episode as a subgraph.
-
-        Creates cue, content, and outcome nodes with typed edges.
-        """
-        # Cue node
+    async def record(self, episode: Episode) -> str:
         cue_node = MemoryNode(
             content=episode.cue,
             node_type=MemoryType.EPISODIC,
             id=f"{episode.id}_cue",
-            embedding=self._embedder.embed(episode.cue),
+            embedding=await self._embedder.embed(episode.cue),
             metadata={
                 "episode_id": episode.id,
                 "role": "cue",
@@ -67,10 +59,7 @@ class EpisodicMemory:
                 "tags": episode.tags,
             },
         )
-        self._graph.add_node(cue_node)
-
-        # Content node
-        import json
+        await self._graph.add_node(cue_node)
 
         content_str = json.dumps(episode.content, default=str)
         content_node = MemoryNode(
@@ -82,9 +71,8 @@ class EpisodicMemory:
                 "role": "content",
             },
         )
-        self._graph.add_node(content_node)
+        await self._graph.add_node(content_node)
 
-        # Outcome node
         outcome_str = episode.outcome.value
         if episode.correction:
             outcome_str += f" | correction: {episode.correction}"
@@ -98,17 +86,16 @@ class EpisodicMemory:
                 "outcome": episode.outcome.value,
             },
         )
-        self._graph.add_node(outcome_node)
+        await self._graph.add_node(outcome_node)
 
-        # Edges: cue → content → outcome
-        self._graph.add_edge(
+        await self._graph.add_edge(
             MemoryEdge(
                 source_id=cue_node.id,
                 target_id=content_node.id,
                 relation_type="produced",
             )
         )
-        self._graph.add_edge(
+        await self._graph.add_edge(
             MemoryEdge(
                 source_id=content_node.id,
                 target_id=outcome_node.id,
@@ -116,9 +103,8 @@ class EpisodicMemory:
             )
         )
 
-        # If corrected, add correction edge
         if episode.outcome == EpisodeOutcome.CORRECTED and episode.correction:
-            self._graph.add_edge(
+            await self._graph.add_edge(
                 MemoryEdge(
                     source_id=outcome_node.id,
                     target_id=cue_node.id,
@@ -130,7 +116,7 @@ class EpisodicMemory:
         self._episodes[episode.id] = episode
         return episode.id
 
-    def recall(
+    async def recall(
         self,
         cue: str,
         task_type: str | None = None,
@@ -138,20 +124,11 @@ class EpisodicMemory:
         max_episodes: int = 3,
         capacity: CapacityHints | None = None,
     ) -> list[Episode]:
-        """Reconstructive retrieval from the episodic graph.
-
-        1. Match cue against episode cue nodes
-        2. Filter by task_type and outcome if specified
-        3. Prioritize failures over successes (more learning signal)
-        4. Return structured episodes
-        """
         if capacity and capacity.recommended_chunk_tokens < 2000:
             max_episodes = min(max_episodes, 2)
 
-        # Find matching cue nodes
-        cue_nodes = self._find_matching_cues(cue, task_type=task_type)
+        cue_nodes = await self._find_matching_cues(cue, task_type=task_type)
 
-        # Reconstruct episodes from cue nodes
         episodes: list[tuple[float, Episode]] = []
         for sim, cue_node in cue_nodes:
             episode_id = cue_node.metadata.get("episode_id")
@@ -163,7 +140,6 @@ class EpisodicMemory:
             if outcome_filter and episode.outcome != outcome_filter:
                 continue
 
-            # Boost failures — they carry more learning signal
             score = sim
             if episode.outcome == EpisodeOutcome.FAILURE:
                 score *= 1.5
@@ -172,13 +148,11 @@ class EpisodicMemory:
 
             episodes.append((score, episode))
 
-        # Sort by score descending
         episodes.sort(key=lambda x: x[0], reverse=True)
         results = [ep for _, ep in episodes[:max_episodes]]
 
-        # Touch accessed nodes
         for ep in results:
-            self._graph.update_utility(f"{ep.id}_cue")
+            await self._graph.update_utility(f"{ep.id}_cue")
 
         return results
 
@@ -187,13 +161,6 @@ class EpisodicMemory:
         task_type: str,
         min_occurrences: int = 3,
     ) -> list[EpisodicPattern]:
-        """Detect repeated patterns across episodes for a task type.
-
-        Groups episodes by outcome and looks for clusters. Used by
-        consolidation to detect when episodic patterns should become
-        semantic facts or procedural amendments.
-        """
-        # Group episodes by task type and outcome
         by_outcome: dict[EpisodeOutcome, list[Episode]] = {}
         for episode in self._episodes.values():
             if episode.task_type != task_type:
@@ -201,7 +168,6 @@ class EpisodicMemory:
             by_outcome.setdefault(episode.outcome, []).append(episode)
 
         patterns: list[EpisodicPattern] = []
-
         for outcome, eps in by_outcome.items():
             if len(eps) >= min_occurrences:
                 patterns.append(
@@ -217,7 +183,6 @@ class EpisodicMemory:
         return patterns
 
     def generate_warnings(self, episodes: list[Episode]) -> list[str]:
-        """Generate warning strings from failed/corrected episodes."""
         warnings = []
         for ep in episodes:
             if ep.outcome == EpisodeOutcome.FAILURE:
@@ -231,21 +196,15 @@ class EpisodicMemory:
                 )
         return warnings
 
-    def _find_matching_cues(
+    async def _find_matching_cues(
         self,
         query: str,
         task_type: str | None = None,
         limit: int = 10,
     ) -> list[tuple[float, MemoryNode]]:
-        """Find cue nodes matching a query, optionally filtered by task type.
+        query_embedding = await self._embedder.embed(query)
 
-        Delegates similarity search to the graph layer (native vector
-        search on Kùzu, Python cosine on MemoryGraph).
-        """
-        query_embedding = self._embedder.embed(query)
-
-        # Fetch more than needed to allow for task_type/role filtering
-        similar = self._graph.similarity_search(
+        similar = await self._graph.similarity_search(
             query_embedding, node_type=MemoryType.EPISODIC, limit=limit * 5
         )
 
@@ -255,7 +214,6 @@ class EpisodicMemory:
                 continue
             if task_type and node.metadata.get("task_type") != task_type:
                 continue
-            # Compute actual cosine score for failure-boosting math
             sim = _cosine_similarity(query_embedding, node.embedding) if node.embedding else 0.0
             candidates.append((sim, node))
 

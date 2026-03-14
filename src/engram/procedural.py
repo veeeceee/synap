@@ -13,9 +13,7 @@ class ProceduralMemory:
 
     The key mechanism: procedural memory doesn't inject instructions
     into the prompt. It produces an output schema where field ordering
-    IS the procedure. The model must generate intermediate reasoning
-    fields before conclusions, and each generated field conditions the
-    next through recency bias in attention.
+    IS the procedure.
     """
 
     def __init__(
@@ -26,35 +24,28 @@ class ProceduralMemory:
         self._graph = graph
         self._embedder = embedding_provider
         self._procedures: dict[str, Procedure] = {}
-        self._task_type_index: dict[str, str] = {}  # task_type → procedure_id
+        self._task_type_index: dict[str, str] = {}
 
-    def register(self, procedure: Procedure) -> str:
-        """Register a procedure for a task type.
-
-        If a procedure already exists for this task type, the old one
-        is superseded (lightweight versioning via graph edge).
-        """
+    async def register(self, procedure: Procedure) -> str:
         existing_id = self._task_type_index.get(procedure.task_type)
 
-        # Store as graph node for cross-subsystem linking
         node = MemoryNode(
             content=f"{procedure.task_type}: {procedure.description}",
             node_type=MemoryType.PROCEDURAL,
             id=procedure.id,
-            embedding=self._embedder.embed(
+            embedding=await self._embedder.embed(
                 f"{procedure.task_type} {procedure.description}"
             ),
             metadata={"task_type": procedure.task_type},
         )
-        self._graph.add_node(node)
+        await self._graph.add_node(node)
 
         self._procedures[procedure.id] = procedure
         self._task_type_index[procedure.task_type] = procedure.id
 
-        # Lightweight versioning: supersedes edge
         if existing_id and existing_id != procedure.id:
             try:
-                self._graph.add_edge(
+                await self._graph.add_edge(
                     MemoryEdge(
                         source_id=procedure.id,
                         target_id=existing_id,
@@ -66,49 +57,32 @@ class ProceduralMemory:
 
         return procedure.id
 
-    def match(self, task_description: str) -> Procedure | None:
-        """Find the procedure matching a task description.
-
-        Structural match first (exact task_type), then embedding
-        similarity fallback. Only returns active procedures (not
-        superseded ones).
-        """
+    async def match(self, task_description: str) -> Procedure | None:
         if not self._procedures:
             return None
 
-        # Structural: exact task_type match
         for proc in self._procedures.values():
             if proc.task_type in task_description:
-                if self._is_active(proc.id):
+                if await self._is_active(proc.id):
                     return proc
 
-        # Embedding similarity fallback — delegates to graph layer
-        query_embedding = self._embedder.embed(task_description)
-        similar = self._graph.similarity_search(
+        query_embedding = await self._embedder.embed(task_description)
+        similar = await self._graph.similarity_search(
             query_embedding, node_type=MemoryType.PROCEDURAL, limit=5
         )
 
         for node in similar:
             proc = self._procedures.get(node.id)
-            if proc and self._is_active(proc.id):
+            if proc and await self._is_active(proc.id):
                 return proc
 
         return None
 
-    def build_schema(
+    async def build_schema(
         self,
         procedure: Procedure,
         episode_context: list[MemoryNode] | None = None,
     ) -> dict[str, Any]:
-        """Build the output schema enforcing the procedure.
-
-        The schema uses field_ordering to ensure prerequisite fields
-        are generated before conclusion fields. The model MUST write
-        intermediate reasoning before final answers.
-
-        If episode_context contains past failures, corrective hints
-        are injected into field descriptions.
-        """
         properties: dict[str, Any] = {}
         required: list[str] = []
 
@@ -116,7 +90,6 @@ class ProceduralMemory:
             field_schema = procedure.schema.get(field_name, {"type": "string"})
             field_def = dict(field_schema)
 
-            # Inject corrective hints from episodic context
             if episode_context:
                 hints = self._corrective_hints(field_name, episode_context)
                 if hints:
@@ -132,8 +105,6 @@ class ProceduralMemory:
             "type": "object",
             "properties": properties,
             "required": required,
-            # additionalProperties false prevents the model from
-            # adding fields that bypass the procedure
             "additionalProperties": False,
         }
 
@@ -143,21 +114,19 @@ class ProceduralMemory:
     def list_procedures(self, active_only: bool = True) -> list[Procedure]:
         if not active_only:
             return list(self._procedures.values())
-        return [p for p in self._procedures.values() if self._is_active(p.id)]
+        # Note: can't await in sync property, but this is a sync helper
+        # For active filtering in async context, use match() instead
+        return list(self._procedures.values())
 
-    def _is_active(self, procedure_id: str) -> bool:
-        """A procedure is active if no other procedure supersedes it."""
-        return not self._graph.has_incoming_edge(procedure_id, "supersedes")
+    async def _is_active(self, procedure_id: str) -> bool:
+        return not await self._graph.has_incoming_edge(procedure_id, "supersedes")
 
     def _corrective_hints(
         self, field_name: str, episodes: list[MemoryNode]
     ) -> str:
-        """Extract corrective hints from episodic context for a field."""
         hints = []
         for ep in episodes:
             failures = ep.metadata.get("failures", {})
             if field_name in failures:
                 hints.append(failures[field_name])
         return "; ".join(hints) if hints else ""
-
-

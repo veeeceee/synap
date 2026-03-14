@@ -113,7 +113,7 @@ class Bootstrap:
         self._embedder = embedding_provider
         self._llm = llm_provider
 
-    def extract_knowledge(
+    async def extract_knowledge(
         self,
         texts: list[str],
         domain_hint: str | None = None,
@@ -132,7 +132,7 @@ class Bootstrap:
                 text=text[:8000],  # Limit input size
                 domain_hint=hint_line,
             )
-            raw = self._llm.generate(
+            raw = await self._llm.generate(
                 prompt,
                 output_schema={
                     "type": "object",
@@ -190,7 +190,7 @@ class Bootstrap:
 
         return proposed
 
-    def infer_procedure(
+    async def infer_procedure(
         self,
         system_prompt: str,
         example_inputs: list[dict[str, Any]] | None = None,
@@ -220,7 +220,7 @@ class Bootstrap:
             examples_section=examples_section,
         )
 
-        raw = self._llm.generate(prompt)
+        raw = await self._llm.generate(prompt)
         parsed = _safe_parse_json(raw)
 
         if parsed is None:
@@ -241,7 +241,7 @@ class Bootstrap:
             system_prompt_fragment=system_prompt[:2000],
         )
 
-    def ingest_logs(
+    async def ingest_logs(
         self,
         logs: list[dict[str, Any]],
         task_type: str | None = None,
@@ -280,18 +280,18 @@ class Bootstrap:
                 tags=log.get("tags", []),
             )
 
-            self._episodic.record(episode)
+            await self._episodic.record(episode)
             episodes.append(episode)
 
         return episodes
 
-    def accept(self, proposed: ProposedKnowledge) -> list[str]:
+    async def accept(self, proposed: ProposedKnowledge) -> list[str]:
         """Commit proposed knowledge to the semantic graph. Returns node IDs."""
         node_ids: list[str] = []
 
         # Create all nodes first
         for proposed_node in proposed.nodes:
-            node_id = self._semantic.store(
+            node_id = await self._semantic.store(
                 content=proposed_node.content,
                 metadata=proposed_node.metadata,
             )
@@ -304,7 +304,7 @@ class Bootstrap:
                 and proposed_edge.target_index < len(node_ids)
             ):
                 try:
-                    self._semantic.link(
+                    await self._semantic.link(
                         source_id=node_ids[proposed_edge.source_index],
                         target_id=node_ids[proposed_edge.target_index],
                         relation_type=proposed_edge.relation_type,

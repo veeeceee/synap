@@ -1,4 +1,4 @@
-"""MemoryGraph — typed property graph backing all three memory subsystems."""
+"""MemoryGraph — async in-memory typed property graph backing all three memory subsystems."""
 
 from __future__ import annotations
 
@@ -16,44 +16,44 @@ class MemoryGraph:
     Each subsystem owns a partition of nodes (by node_type) but edges
     can cross partitions — this is how consolidation creates links
     between episodic experiences and semantic facts.
+
+    All methods are async to satisfy the GraphStore protocol.
+    In-memory operations return immediately.
     """
 
     def __init__(self, utility_decay_rate: float = 0.01) -> None:
         self._nodes: dict[str, MemoryNode] = {}
         self._edges: dict[str, MemoryEdge] = {}
-        # Adjacency: node_id → list of edge_ids (outgoing)
         self._outgoing: dict[str, list[str]] = defaultdict(list)
-        # Adjacency: node_id → list of edge_ids (incoming)
         self._incoming: dict[str, list[str]] = defaultdict(list)
         self._utility_decay_rate = utility_decay_rate
 
     # --- Node operations ---
 
-    def add_node(self, node: MemoryNode) -> str:
+    async def add_node(self, node: MemoryNode) -> str:
         self._nodes[node.id] = node
         return node.id
 
-    def get_node(self, node_id: str) -> MemoryNode | None:
+    async def get_node(self, node_id: str) -> MemoryNode | None:
         return self._nodes.get(node_id)
 
-    def remove_node(self, node_id: str) -> None:
-        # Remove all connected edges first
+    async def remove_node(self, node_id: str) -> None:
         for edge_id in list(self._outgoing.get(node_id, [])):
-            self.remove_edge(edge_id)
+            await self.remove_edge(edge_id)
         for edge_id in list(self._incoming.get(node_id, [])):
-            self.remove_edge(edge_id)
+            await self.remove_edge(edge_id)
         self._outgoing.pop(node_id, None)
         self._incoming.pop(node_id, None)
         self._nodes.pop(node_id, None)
 
-    def node_count(self, node_type: MemoryType | None = None) -> int:
+    async def node_count(self, node_type: MemoryType | None = None) -> int:
         if node_type is None:
             return len(self._nodes)
         return sum(1 for n in self._nodes.values() if n.node_type == node_type)
 
     # --- Edge operations ---
 
-    def add_edge(self, edge: MemoryEdge) -> str:
+    async def add_edge(self, edge: MemoryEdge) -> str:
         if edge.source_id not in self._nodes:
             raise KeyError(f"Source node {edge.source_id} not in graph")
         if edge.target_id not in self._nodes:
@@ -63,10 +63,10 @@ class MemoryGraph:
         self._incoming[edge.target_id].append(edge.id)
         return edge.id
 
-    def get_edge(self, edge_id: str) -> MemoryEdge | None:
+    async def get_edge(self, edge_id: str) -> MemoryEdge | None:
         return self._edges.get(edge_id)
 
-    def remove_edge(self, edge_id: str) -> None:
+    async def remove_edge(self, edge_id: str) -> None:
         edge = self._edges.pop(edge_id, None)
         if edge is None:
             return
@@ -77,20 +77,19 @@ class MemoryGraph:
         if edge_id in inc:
             inc.remove(edge_id)
 
-    def edge_count(self, relation_type: str | None = None) -> int:
+    async def edge_count(self, relation_type: str | None = None) -> int:
         if relation_type is None:
             return len(self._edges)
         return sum(1 for e in self._edges.values() if e.relation_type == relation_type)
 
     # --- Traversal ---
 
-    def neighbors(
+    async def neighbors(
         self,
         node_id: str,
         edge_type: str | None = None,
         direction: str = "outgoing",
     ) -> list[MemoryNode]:
-        """Get neighbor nodes, optionally filtered by edge type."""
         if direction == "outgoing":
             edge_ids = self._outgoing.get(node_id, [])
             get_neighbor_id = lambda e: e.target_id
@@ -98,7 +97,6 @@ class MemoryGraph:
             edge_ids = self._incoming.get(node_id, [])
             get_neighbor_id = lambda e: e.source_id
         else:
-            # Both directions
             edge_ids = self._outgoing.get(node_id, []) + self._incoming.get(
                 node_id, []
             )
@@ -118,18 +116,13 @@ class MemoryGraph:
                 results.append(neighbor)
         return results
 
-    def traverse(
+    async def traverse(
         self,
         start: str,
         edge_types: list[str] | None = None,
         max_depth: int = 2,
         max_nodes: int = 50,
     ) -> list[MemoryNode]:
-        """BFS traversal from a start node, optionally filtered by edge types.
-
-        Returns connected nodes up to max_depth hops and max_nodes total.
-        The start node is NOT included in results.
-        """
         if start not in self._nodes:
             return []
 
@@ -170,13 +163,12 @@ class MemoryGraph:
 
     # --- Query ---
 
-    def query(
+    async def query(
         self,
         node_type: MemoryType | None = None,
         filters: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> list[MemoryNode]:
-        """Query nodes by type and metadata filters."""
         results: list[MemoryNode] = []
         for node in self._nodes.values():
             if node_type is not None and node.node_type != node_type:
@@ -191,13 +183,11 @@ class MemoryGraph:
 
     # --- Utility & lifecycle ---
 
-    def update_utility(self, node_id: str) -> None:
-        """Touch a node — updates access time, count, and recalculates utility."""
+    async def update_utility(self, node_id: str) -> None:
         node = self._nodes.get(node_id)
         if node is None:
             return
         node.touch()
-        # Utility = base * decay^time + frequency bonus
         seconds_since_creation = max(
             1.0,
             (datetime.now(timezone.utc) - node.created_at).total_seconds(),
@@ -207,8 +197,7 @@ class MemoryGraph:
         frequency_bonus = min(1.0, node.access_count / 20)
         node.utility_score = decay + frequency_bonus
 
-    def decay_all(self) -> None:
-        """Recalculate utility scores for all nodes based on time decay."""
+    async def decay_all(self) -> None:
         now = datetime.now(timezone.utc)
         for node in self._nodes.values():
             seconds = max(1.0, (now - node.last_accessed).total_seconds())
@@ -217,23 +206,21 @@ class MemoryGraph:
             frequency_bonus = min(1.0, node.access_count / 20)
             node.utility_score = decay + frequency_bonus
 
-    def evict(self, threshold: float = 0.1) -> list[str]:
-        """Remove nodes with utility below threshold. Returns evicted IDs."""
+    async def evict(self, threshold: float = 0.1) -> list[str]:
         to_evict = [
             nid
             for nid, node in self._nodes.items()
             if node.utility_score < threshold
         ]
         for nid in to_evict:
-            self.remove_node(nid)
+            await self.remove_node(nid)
         return to_evict
 
     # --- Edges between specific nodes ---
 
-    def edges_between(
+    async def edges_between(
         self, source_id: str, target_id: str, relation_type: str | None = None
     ) -> list[MemoryEdge]:
-        """Find edges from source to target, optionally filtered by type."""
         results = []
         for eid in self._outgoing.get(source_id, []):
             edge = self._edges.get(eid)
@@ -246,21 +233,19 @@ class MemoryGraph:
             results.append(edge)
         return results
 
-    def has_incoming_edge(self, node_id: str, relation_type: str) -> bool:
-        """Check if a node has any incoming edge of a given type."""
+    async def has_incoming_edge(self, node_id: str, relation_type: str) -> bool:
         for eid in self._incoming.get(node_id, []):
             edge = self._edges.get(eid)
             if edge and edge.relation_type == relation_type:
                 return True
         return False
 
-    def similarity_search(
+    async def similarity_search(
         self,
         embedding: list[float],
         node_type: MemoryType | None = None,
         limit: int = 10,
     ) -> list[MemoryNode]:
-        """Brute-force cosine similarity search over nodes with embeddings."""
         candidates: list[tuple[float, MemoryNode]] = []
         for node in self._nodes.values():
             if node_type is not None and node.node_type != node_type:

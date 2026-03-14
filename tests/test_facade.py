@@ -10,7 +10,7 @@ from engram.types import (
 from tests.conftest import FakeEmbedder, FakeLLM
 
 
-def test_full_cycle():
+async def test_full_cycle():
     """End-to-end: register procedure, prepare call, record outcome."""
     memory = CognitiveMemory(
         embedding_provider=FakeEmbedder(),
@@ -19,7 +19,7 @@ def test_full_cycle():
     )
 
     # Register a procedure
-    memory.procedural.register(
+    await memory.procedural.register(
         Procedure(
             task_type="prior_auth_determination",
             description="Determine prior authorization",
@@ -34,10 +34,10 @@ def test_full_cycle():
     )
 
     # Seed semantic memory
-    memory.semantic.store("Step therapy required before surgical intervention")
+    await memory.semantic.store("Step therapy required before surgical intervention")
 
     # Prepare a call
-    ctx = memory.prepare_call(
+    ctx = await memory.prepare_call(
         task_description="Determine prior authorization for knee replacement",
     )
 
@@ -50,7 +50,7 @@ def test_full_cycle():
     ]
 
     # Record outcome
-    episode_id = memory.record_outcome(
+    episode_id = await memory.record_outcome(
         task_description="Prior auth for knee replacement",
         input_data={"cpt": "27447"},
         output={"determination": "approved", "reasoning": "met criteria"},
@@ -61,25 +61,25 @@ def test_full_cycle():
     assert episode_id is not None
 
     # Stats should reflect the data
-    stats = memory.stats()
+    stats = await memory.stats()
     assert stats.semantic_nodes >= 1
     assert stats.procedural_nodes >= 1
     assert stats.total_episodes == 1
 
 
-def test_prepare_call_without_procedure():
+async def test_prepare_call_without_procedure():
     """prepare_call works even when no procedure matches."""
     memory = CognitiveMemory(
         embedding_provider=FakeEmbedder(),
         llm_provider=FakeLLM(),
     )
 
-    ctx = memory.prepare_call(task_description="Do something novel")
+    ctx = await memory.prepare_call(task_description="Do something novel")
     assert ctx.procedure is None
     assert ctx.output_schema is None
 
 
-def test_episodic_warnings_in_context():
+async def test_episodic_warnings_in_context():
     """Failed episodes generate warnings in PreparedContext."""
     memory = CognitiveMemory(
         embedding_provider=FakeEmbedder(),
@@ -87,7 +87,7 @@ def test_episodic_warnings_in_context():
     )
 
     # Record a failure
-    memory.record_outcome(
+    await memory.record_outcome(
         task_description="Diagnose payment webhook error",
         input_data={},
         output={"diagnosis": "wrong"},
@@ -96,7 +96,7 @@ def test_episodic_warnings_in_context():
     )
 
     # Next call with similar description should get warnings
-    ctx = memory.prepare_call(
+    ctx = await memory.prepare_call(
         task_description="Diagnose payment webhook error",
     )
 
@@ -104,7 +104,7 @@ def test_episodic_warnings_in_context():
     assert any(ep.outcome == EpisodeOutcome.FAILURE for ep in ctx.relevant_episodes)
 
 
-def test_consolidation_on_repeated_failures():
+async def test_consolidation_on_repeated_failures():
     """Repeated failures trigger consolidation event."""
     llm = FakeLLM()
     memory = CognitiveMemory(
@@ -114,7 +114,7 @@ def test_consolidation_on_repeated_failures():
 
     # Record 3 failures for the same task type
     for i in range(3):
-        memory.record_outcome(
+        await memory.record_outcome(
             task_description=f"Auth failure case {i}",
             input_data={},
             output={"error": f"failed_{i}"},
@@ -123,15 +123,15 @@ def test_consolidation_on_repeated_failures():
         )
 
     # Should have queued a consolidation event
-    stats = memory.stats()
+    stats = await memory.stats()
     assert stats.pending_consolidation >= 1
 
     # Process consolidation
-    results = memory.consolidate()
+    results = await memory.consolidate()
     assert len(results) >= 1
 
 
-def test_evaluation_report():
+async def test_evaluation_report():
     """Evaluation report tracks outcome trends."""
     memory = CognitiveMemory(
         embedding_provider=FakeEmbedder(),
@@ -146,7 +146,7 @@ def test_evaluation_report():
         EpisodeOutcome.SUCCESS,
         EpisodeOutcome.SUCCESS,
     ]:
-        memory.record_outcome(
+        await memory.record_outcome(
             task_description="test task",
             input_data={},
             output={"result": "x"},
@@ -159,7 +159,7 @@ def test_evaluation_report():
     assert len(report.outcome_trend["test_type"]) >= 1
 
 
-def test_capacity_hints_limit_retrieval():
+async def test_capacity_hints_limit_retrieval():
     """Small capacity hints reduce retrieval depth."""
     memory = CognitiveMemory(
         embedding_provider=FakeEmbedder(),
@@ -172,23 +172,23 @@ def test_capacity_hints_limit_retrieval():
 
     # Store many semantic nodes
     for i in range(20):
-        memory.semantic.store(f"Fact number {i} about medical procedures")
+        await memory.semantic.store(f"Fact number {i} about medical procedures")
 
-    ctx = memory.prepare_call(task_description="Medical procedure facts")
+    ctx = await memory.prepare_call(task_description="Medical procedure facts")
     # With small capacity, should retrieve fewer nodes
     assert ctx.capacity_used <= 1.0
 
 
-def test_stats_reflect_graph_state():
+async def test_stats_reflect_graph_state():
     """Stats accurately reflect the current graph state."""
     memory = CognitiveMemory(
         embedding_provider=FakeEmbedder(),
         llm_provider=FakeLLM(),
     )
 
-    memory.semantic.store("fact 1")
-    memory.semantic.store("fact 2")
-    memory.procedural.register(
+    await memory.semantic.store("fact 1")
+    await memory.semantic.store("fact 2")
+    await memory.procedural.register(
         Procedure(
             task_type="test",
             description="test proc",
@@ -197,6 +197,6 @@ def test_stats_reflect_graph_state():
         )
     )
 
-    stats = memory.stats()
+    stats = await memory.stats()
     assert stats.semantic_nodes == 2
     assert stats.procedural_nodes == 1

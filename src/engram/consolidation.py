@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class ConsolidationConfig:
-    """Configuration for consolidation behavior."""
-
     min_pattern_occurrences: int = 3
     eviction_threshold: float = 0.1
     max_queue_size: int = 100
@@ -33,8 +31,6 @@ class ConsolidationConfig:
 
 @dataclass
 class ConsolidationResult:
-    """Result of processing a consolidation event."""
-
     event: ConsolidationEvent
     created_nodes: list[str] = field(default_factory=list)
     created_edges: list[str] = field(default_factory=list)
@@ -43,13 +39,7 @@ class ConsolidationResult:
 
 
 class ConsolidationEngine:
-    """Processes consolidation events: episodic → semantic, episodic → procedural.
-
-    Three triggers produce events, all processed through the same queue:
-    - Event-driven: immediate, on pattern detection after episode recording
-    - Periodic: scheduled pass over the full episodic store
-    - Query-triggered: lazy, when retrieval detects redundancy
-    """
+    """Processes consolidation events: episodic → semantic, episodic → procedural."""
 
     def __init__(
         self,
@@ -68,10 +58,7 @@ class ConsolidationEngine:
         self._config = config or ConsolidationConfig()
         self._queue: list[ConsolidationEvent] = []
 
-    # --- Event-driven ---
-
-    def on_episode_recorded(self, episode: Episode) -> ConsolidationEvent | None:
-        """Check if a new episode creates a consolidation-worthy pattern."""
+    async def on_episode_recorded(self, episode: Episode) -> ConsolidationEvent | None:
         if episode.task_type is None:
             return None
 
@@ -82,11 +69,10 @@ class ConsolidationEngine:
 
         for pattern in patterns:
             if pattern.outcome == EpisodeOutcome.FAILURE:
-                # Repeated failures → suggest procedural amendment
                 candidate_nodes = [
                     node
                     for eid in pattern.episode_ids
-                    if (node := self._graph.get_node(f"{eid}_cue")) is not None
+                    if (node := await self._graph.get_node(f"{eid}_cue")) is not None
                 ]
                 return ConsolidationEvent(
                     source_type=MemoryType.EPISODIC,
@@ -100,11 +86,10 @@ class ConsolidationEngine:
                     },
                 )
             elif pattern.outcome == EpisodeOutcome.SUCCESS:
-                # Repeated successes → extract semantic facts
                 candidate_nodes = [
                     node
                     for eid in pattern.episode_ids
-                    if (node := self._graph.get_node(f"{eid}_content")) is not None
+                    if (node := await self._graph.get_node(f"{eid}_content")) is not None
                 ]
                 if candidate_nodes:
                     return ConsolidationEvent(
@@ -121,22 +106,10 @@ class ConsolidationEngine:
 
         return None
 
-    # --- Periodic ---
+    async def run_periodic(self) -> list[ConsolidationEvent]:
+        await self._graph.decay_all()
+        await self._graph.evict(threshold=self._config.eviction_threshold)
 
-    def run_periodic(self) -> list[ConsolidationEvent]:
-        """Scheduled consolidation pass.
-
-        1. Decay utility scores across all nodes
-        2. Evict nodes below threshold
-        3. Scan for consolidation opportunities
-        """
-        # Decay
-        self._graph.decay_all()
-
-        # Evict
-        self._graph.evict(threshold=self._config.eviction_threshold)
-
-        # Scan for patterns across all task types
         events: list[ConsolidationEvent] = []
         seen_task_types: set[str] = set()
 
@@ -151,7 +124,7 @@ class ConsolidationEngine:
                     candidate_nodes = [
                         node
                         for eid in pattern.episode_ids
-                        if (node := self._graph.get_node(f"{eid}_content"))
+                        if (node := await self._graph.get_node(f"{eid}_content"))
                         is not None
                     ]
                     if candidate_nodes:
@@ -176,14 +149,11 @@ class ConsolidationEngine:
 
         return events
 
-    # --- Query-triggered ---
-
-    def on_retrieval(
+    async def on_retrieval(
         self,
         query: str,
         results: list[MemoryNode],
     ) -> ConsolidationEvent | None:
-        """Check if retrieval results contain redundant episodes."""
         episodic_results = [
             r for r in results if r.node_type == MemoryType.EPISODIC
         ]
@@ -199,26 +169,20 @@ class ConsolidationEngine:
             metadata={"query": query},
         )
 
-    # --- Queue management ---
-
     def queue_event(self, event: ConsolidationEvent) -> None:
         if len(self._queue) < self._config.max_queue_size:
             self._queue.append(event)
 
-    def process_queue(self) -> list[ConsolidationResult]:
-        """Process all queued consolidation events."""
+    async def process_queue(self) -> list[ConsolidationResult]:
         results = []
         while self._queue:
             event = self._queue.pop(0)
-            result = self.process(event)
+            result = await self.process(event)
             if result:
                 results.append(result)
         return results
 
-    # --- Processing ---
-
-    def process(self, event: ConsolidationEvent) -> ConsolidationResult | None:
-        """Process a single consolidation event using the LLM."""
+    async def process(self, event: ConsolidationEvent) -> ConsolidationResult | None:
         if not event.candidates:
             return None
 
@@ -227,17 +191,17 @@ class ConsolidationEngine:
                 event.source_type == MemoryType.EPISODIC
                 and event.target_type == MemoryType.SEMANTIC
             ):
-                return self._consolidate_to_semantic(event)
+                return await self._consolidate_to_semantic(event)
             elif (
                 event.source_type == MemoryType.EPISODIC
                 and event.target_type == MemoryType.PROCEDURAL
             ):
-                return self._consolidate_to_procedural(event)
+                return await self._consolidate_to_procedural(event)
             elif (
                 event.source_type == MemoryType.SEMANTIC
                 and event.target_type == MemoryType.SEMANTIC
             ):
-                return self._merge_semantic(event)
+                return await self._merge_semantic(event)
             else:
                 return ConsolidationResult(
                     event=event,
@@ -251,10 +215,9 @@ class ConsolidationEngine:
                 error=str(e),
             )
 
-    def _consolidate_to_semantic(
+    async def _consolidate_to_semantic(
         self, event: ConsolidationEvent
     ) -> ConsolidationResult:
-        """Extract common facts from episodic candidates into a semantic node."""
         contents = [c.content for c in event.candidates]
         prompt = (
             "Extract the key facts from these agent experiences into a single, "
@@ -264,19 +227,17 @@ class ConsolidationEngine:
             + "\n---\n".join(contents)
             + "\n\nExtracted fact:"
         )
-        fact = self._llm.generate(prompt)
+        fact = await self._llm.generate(prompt)
 
-        # Create semantic node
-        node_id = self._semantic.store(
+        node_id = await self._semantic.store(
             content=fact.strip(),
             metadata={"consolidated_from": [c.id for c in event.candidates]},
         )
 
-        # Link to source episodes
         created_edges = []
         for candidate in event.candidates:
             try:
-                edge_id = self._semantic.link(
+                edge_id = await self._semantic.link(
                     source_id=node_id,
                     target_id=candidate.id,
                     relation_type="derived_from",
@@ -285,7 +246,6 @@ class ConsolidationEngine:
             except KeyError:
                 pass
 
-        # Reduce utility of consolidated episodes
         for candidate in event.candidates:
             candidate.utility_score *= 0.5
 
@@ -295,10 +255,9 @@ class ConsolidationEngine:
             created_edges=created_edges,
         )
 
-    def _consolidate_to_procedural(
+    async def _consolidate_to_procedural(
         self, event: ConsolidationEvent
     ) -> ConsolidationResult:
-        """Generate a procedural amendment from failure patterns."""
         contents = [c.content for c in event.candidates]
         task_type = event.metadata.get("task_type", "unknown")
 
@@ -308,10 +267,9 @@ class ConsolidationEngine:
             + "\n\nWhat check or reasoning step should be added to prevent "
             "this failure pattern? Respond with a single, specific instruction."
         )
-        amendment = self._llm.generate(prompt)
+        amendment = await self._llm.generate(prompt)
 
-        # Store as a semantic node (procedural amendments are knowledge about procedures)
-        node_id = self._semantic.store(
+        node_id = await self._semantic.store(
             content=f"Procedural amendment for {task_type}: {amendment.strip()}",
             metadata={
                 "amendment_for": task_type,
@@ -324,8 +282,7 @@ class ConsolidationEngine:
             created_nodes=[node_id],
         )
 
-    def _merge_semantic(self, event: ConsolidationEvent) -> ConsolidationResult:
-        """Merge redundant semantic nodes."""
+    async def _merge_semantic(self, event: ConsolidationEvent) -> ConsolidationResult:
         contents = [c.content for c in event.candidates]
         prompt = (
             "These semantic facts are redundant. Merge them into a single, "
@@ -333,9 +290,9 @@ class ConsolidationEngine:
             + "\n---\n".join(contents)
             + "\n\nMerged fact:"
         )
-        merged = self._llm.generate(prompt)
+        merged = await self._llm.generate(prompt)
 
-        node_id = self._semantic.store(
+        node_id = await self._semantic.store(
             content=merged.strip(),
             metadata={"merged_from": [c.id for c in event.candidates]},
         )
@@ -343,7 +300,7 @@ class ConsolidationEngine:
         created_edges = []
         for candidate in event.candidates:
             try:
-                edge_id = self._semantic.link(
+                edge_id = await self._semantic.link(
                     source_id=node_id,
                     target_id=candidate.id,
                     relation_type="merged_from",

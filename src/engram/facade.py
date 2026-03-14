@@ -111,7 +111,7 @@ class CognitiveMemory:
 
     # --- High-level operations ---
 
-    def prepare_call(
+    async def prepare_call(
         self,
         task_description: str,
         input_data: dict[str, Any] | None = None,
@@ -127,13 +127,13 @@ class CognitiveMemory:
         self._retrieval_attempts += 1
 
         # 1. Procedural: match and build schema
-        procedure = self._procedural.match(task_description)
+        procedure = await self._procedural.match(task_description)
         output_schema = None
         prompt_fragment = None
 
         # 3. Episodic: recall relevant past experiences
         task_type = procedure.task_type if procedure else None
-        episodes = self._episodic.recall(
+        episodes = await self._episodic.recall(
             cue=task_description,
             task_type=task_type,
             max_episodes=3,
@@ -153,17 +153,17 @@ class CognitiveMemory:
             # Get episodic nodes for corrective hints
             episode_nodes = []
             for ep in episodes:
-                node = self._graph.get_node(f"{ep.id}_outcome")
+                node = await self._graph.get_node(f"{ep.id}_outcome")
                 if node:
                     episode_nodes.append(node)
 
-            output_schema = self._procedural.build_schema(
+            output_schema = await self._procedural.build_schema(
                 procedure, episode_context=episode_nodes
             )
             prompt_fragment = procedure.system_prompt_fragment
 
         # 2. Semantic: retrieve relevant context
-        semantic_result = self._semantic.retrieve(
+        semantic_result = await self._semantic.retrieve(
             query=task_description,
             capacity=self._capacity,
         )
@@ -199,7 +199,7 @@ class CognitiveMemory:
             ),
         )
 
-    def record_outcome(
+    async def record_outcome(
         self,
         task_description: str,
         input_data: dict[str, Any] | None,
@@ -225,14 +225,14 @@ class CognitiveMemory:
             tags=tags or [],
         )
 
-        episode_id = self._episodic.record(episode)
+        episode_id = await self._episodic.record(episode)
 
         # Track warning effectiveness
         if outcome == EpisodeOutcome.SUCCESS and self._warnings_issued > 0:
             self._warnings_followed_by_success += 1
 
         # Event-driven consolidation check
-        event = self._consolidation.on_episode_recorded(episode)
+        event = await self._consolidation.on_episode_recorded(episode)
         if event:
             self._consolidation.queue_event(event)
 
@@ -263,22 +263,22 @@ class CognitiveMemory:
 
     # --- Lifecycle ---
 
-    def consolidate(self) -> list[Any]:
+    async def consolidate(self) -> list[Any]:
         """Run consolidation: process queued events + periodic pass."""
-        results = self._consolidation.process_queue()
-        periodic_events = self._consolidation.run_periodic()
+        results = await self._consolidation.process_queue()
+        periodic_events = await self._consolidation.run_periodic()
         for event in periodic_events:
-            result = self._consolidation.process(event)
+            result = await self._consolidation.process(event)
             if result:
                 results.append(result)
         return results
 
-    def stats(self) -> MemoryStats:
+    async def stats(self) -> MemoryStats:
         return MemoryStats(
-            semantic_nodes=self._graph.node_count(MemoryType.SEMANTIC),
-            procedural_nodes=self._graph.node_count(MemoryType.PROCEDURAL),
-            episodic_nodes=self._graph.node_count(MemoryType.EPISODIC),
-            total_edges=self._graph.edge_count(),
+            semantic_nodes=await self._graph.node_count(MemoryType.SEMANTIC),
+            procedural_nodes=await self._graph.node_count(MemoryType.PROCEDURAL),
+            episodic_nodes=await self._graph.node_count(MemoryType.EPISODIC),
+            total_edges=await self._graph.edge_count(),
             total_episodes=self._episodic.episode_count,
             pending_consolidation=len(self._consolidation._queue),
         )
