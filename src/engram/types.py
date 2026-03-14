@@ -88,6 +88,7 @@ class Procedure:
     field_ordering: list[str]
     prerequisite_fields: dict[str, list[str]] = field(default_factory=dict)
     system_prompt_fragment: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=_uuid)
     episode_ids: list[str] = field(default_factory=list)
 

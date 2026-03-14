@@ -75,6 +75,7 @@ class SemanticDomain(Protocol):
         task_description: str,
         task_type: str | None = None,
         metadata: dict[str, Any] | None = None,
+        retrieval_hints: dict[str, Any] | None = None,
     ) -> list[DomainResult]: ...
 
     async def absorb(

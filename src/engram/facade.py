@@ -157,10 +157,15 @@ class CognitiveMemory:
             prompt_fragment = procedure.system_prompt_fragment
 
         # 2. Domain knowledge: retrieve via adapter
+        retrieval_hints = None
+        if procedure and procedure.metadata:
+            retrieval_hints = procedure.metadata.get("retrieval_hints")
+
         domain_context = await self._domain.retrieve(
             task_description=task_description,
             task_type=proc_task_type,
             metadata=input_data,
+            retrieval_hints=retrieval_hints,
         )
 
         has_context = bool(

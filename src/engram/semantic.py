@@ -53,6 +53,7 @@ class SemanticMemory:
         task_description: str,
         task_type: str | None = None,
         metadata: dict[str, Any] | None = None,
+        retrieval_hints: dict[str, Any] | None = None,
     ) -> list[DomainResult]:
         result = await self.search(task_description)
         return [
