@@ -5,21 +5,25 @@
 A prior auth agent must follow regulatory procedures exactly. Skipping steps (like checking step therapy requirements) leads to incorrect determinations that cause downstream problems. Engram enforces the reasoning chain structurally.
 
 ```python
-from engram import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome
+from engram import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome, SemanticMemory
 from engram.backends.kuzu import KuzuBackend
+from engram.persistent_graph import PersistentGraph
 
 # Persistent backend — payer knowledge and episode history survive restarts
 backend = KuzuBackend("./prior_auth_memory", embedding_dim=768)
+graph = PersistentGraph(backend=backend)
+domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)
 
 memory = CognitiveMemory(
+    domain=domain,
     embedding_provider=your_embedder,
     llm_provider=your_llm,
+    graph=graph,
     capacity=CapacityHints(max_context_tokens=8192, recommended_chunk_tokens=3000),
-    backend=backend,
 )
 
 # Register the prior auth procedure
-memory.procedural.register(Procedure(
+await memory.procedural.register(Procedure(
     task_type="prior_auth_determination",
     description="Determine whether a prior authorization request meets medical necessity",
     schema={
@@ -49,14 +53,14 @@ memory.procedural.register(Procedure(
 ))
 
 # Seed payer-specific knowledge
-memory.semantic.store("Aetna requires step therapy with PT x 6 weeks before approving lumbar fusion")
-memory.semantic.store("UHC requires peer-to-peer review for all oncology prior auths over $50K")
-id1 = memory.semantic.store("CPT 22612: posterior lumbar interbody fusion")
-id2 = memory.semantic.store("ICD-10 M54.5: low back pain")
-memory.semantic.link(id1, id2, "commonly_associated_with")
+await domain.store("Aetna requires step therapy with PT x 6 weeks before approving lumbar fusion")
+await domain.store("UHC requires peer-to-peer review for all oncology prior auths over $50K")
+id1 = await domain.store("CPT 22612: posterior lumbar interbody fusion")
+id2 = await domain.store("ICD-10 M54.5: low back pain")
+await domain.link(id1, id2, "commonly_associated_with")
 
 # In the agent loop
-ctx = memory.prepare_call(
+ctx = await memory.prepare_call(
     task_description="Determine prior authorization for lumbar spinal fusion",
     input_data={
         "patient_id": "P-12345",
@@ -71,13 +75,13 @@ ctx = memory.prepare_call(
 # alternatives → reasoning → THEN determination
 # The agent cannot skip to "approved" without generating the full chain
 
-response = your_llm.generate(
+response = await your_llm.generate(
     system_prompt=base_prompt + ctx.system_prompt_fragment,
     user_message=format_message(input_data),
     output_schema=ctx.output_schema,
 )
 
-memory.record_outcome(
+await memory.record_outcome(
     task_description="Prior auth: lumbar fusion, Aetna",
     input_data=input_data,
     output=response,
@@ -87,7 +91,7 @@ memory.record_outcome(
 )
 
 # Over time:
-# - Repeated denials for missing PT docs → semantic fact extracted
+# - Repeated denials for missing PT docs → domain fact extracted via absorb()
 # - Agent skipping step therapy check → procedural amendment added
 # - Old episodes about discontinued policies → evicted
 ```
@@ -97,21 +101,38 @@ memory.record_outcome(
 A coding agent that learns from past debugging experiences. Each diagnosis becomes an episode; repeated patterns consolidate into knowledge.
 
 ```python
+from engram import CognitiveMemory, CapacityHints, Procedure, SemanticMemory, MemoryGraph
+from engram.bootstrap import Bootstrap
+from engram.episodic import EpisodicMemory
+
+graph = MemoryGraph()
+domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)
+episodic = EpisodicMemory(graph=graph, embedding_provider=your_embedder)
+
 memory = CognitiveMemory(
+    domain=domain,
     embedding_provider=your_embedder,
     llm_provider=your_llm,
+    graph=graph,
     capacity=CapacityHints(max_context_tokens=16384, recommended_chunk_tokens=4000),
 )
 
 # Bootstrap from codebase documentation
-proposed = memory.bootstrap.extract_knowledge(
+bootstrap = Bootstrap(
+    semantic=domain,
+    episodic=episodic,
+    embedding_provider=your_embedder,
+    llm_provider=your_llm,
+)
+
+proposed = await bootstrap.extract_knowledge(
     texts=[open("ARCHITECTURE.md").read(), open("docs/api_contracts.md").read()],
     domain_hint="software architecture and API design",
 )
-memory.bootstrap.accept(proposed)
+await bootstrap.accept(proposed)
 
 # Register diagnostic procedure
-memory.procedural.register(Procedure(
+await memory.procedural.register(Procedure(
     task_type="diagnose_bug",
     description="Diagnose a bug from error logs, stack traces, and code context",
     schema={
@@ -136,11 +157,11 @@ memory.procedural.register(Procedure(
 ))
 
 # Seed with known patterns
-memory.semantic.store("Stripe webhook payloads vary by event type; always validate shape before accessing fields")
-memory.semantic.store("Race conditions in payment processing often manifest as duplicate charges or missing records")
+await domain.store("Stripe webhook payloads vary by event type; always validate shape before accessing fields")
+await domain.store("Race conditions in payment processing often manifest as duplicate charges or missing records")
 
 # In the agent loop
-ctx = memory.prepare_call(
+ctx = await memory.prepare_call(
     task_description="Diagnose: TypeError in payment processing webhook handler",
     input_data={
         "error": "TypeError: Cannot read property 'amount' of undefined",
@@ -150,7 +171,7 @@ ctx = memory.prepare_call(
 )
 
 # ctx.warnings might include past failures on similar bugs
-# ctx.semantic_context includes the Stripe webhook validation fact
+# ctx.domain_context includes the Stripe webhook validation fact
 # ctx.output_schema enforces: classify → find root cause → THEN propose fix
 ```
 
@@ -159,39 +180,56 @@ ctx = memory.prepare_call(
 A pipeline agent that investigates data quality alerts. Semantic memory holds schema knowledge; episodes track past investigations.
 
 ```python
+from engram import CognitiveMemory, CapacityHints, EpisodeOutcome, SemanticMemory, MemoryGraph
+from engram.bootstrap import Bootstrap
+from engram.episodic import EpisodicMemory
+
+graph = MemoryGraph()
+domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)
+episodic = EpisodicMemory(graph=graph, embedding_provider=your_embedder)
+
 memory = CognitiveMemory(
+    domain=domain,
     embedding_provider=your_embedder,
     llm_provider=your_llm,
+    graph=graph,
     capacity=CapacityHints(max_context_tokens=8192),
 )
 
 # Bootstrap from schema documentation
-proposed = memory.bootstrap.extract_knowledge(
+bootstrap = Bootstrap(
+    semantic=domain,
+    episodic=episodic,
+    embedding_provider=your_embedder,
+    llm_provider=your_llm,
+)
+
+proposed = await bootstrap.extract_knowledge(
     texts=[
         open("schemas/warehouse_ddl.sql").read(),
         open("docs/data_sources.md").read(),
     ],
     domain_hint="data warehouse schemas and ETL transformations",
 )
-memory.bootstrap.accept(proposed)
+await bootstrap.accept(proposed)
 
 # Seed specific data quality rules
-memory.semantic.store(
+await domain.store(
     "vendor_transactions.amount is in cents (integer); divide by 100 for dollars"
 )
-memory.semantic.store(
+await domain.store(
     "revenue_daily pulls from vendor_transactions and partner_payments; check both sources on discrepancy"
 )
 
 # Investigate an alert
-ctx = memory.prepare_call(
+ctx = await memory.prepare_call(
     task_description="Investigate: revenue_daily aggregate off by 100x",
     input_data={"table": "revenue_daily", "expected": 52000, "actual": 5200000},
 )
 
-# ctx.semantic_context includes the cents-vs-dollars rule
+# ctx.domain_context includes the cents-vs-dollars rule
 # After investigation, record outcome:
-memory.record_outcome(
+await memory.record_outcome(
     task_description="Revenue daily 100x discrepancy",
     input_data={"table": "revenue_daily"},
     output={"root_cause": "cents not converted to dollars in new ETL job"},
@@ -199,7 +237,7 @@ memory.record_outcome(
     task_type="investigate_data_quality",
 )
 
-# After several similar investigations, consolidation extracts:
+# After several similar investigations, consolidation extracts via domain.absorb():
 # "Units mismatches are the most common root cause for magnitude errors"
 ```
 

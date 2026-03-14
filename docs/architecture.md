@@ -14,7 +14,14 @@ Engram resolves this by making memory **structurally selective** (graph traversa
 
 ### Semantic Memory — What the agent knows
 
-A knowledge graph of facts, concepts, and typed relations.
+Domain knowledge, pluggable via the `SemanticDomain` protocol.
+
+Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools. Engram doesn't prescribe the shape of domain knowledge. Instead, it defines a protocol with two methods:
+
+- **`retrieve(task_description, ...)`** — return domain knowledge relevant to a task
+- **`absorb(insights, source_episodes, ...)`** — store consolidated insights in your domain's schema
+
+The built-in `SemanticMemory` implements this protocol as a generic knowledge graph with embedding-based entry points and graph traversal:
 
 ```
 [lumbar fusion] --requires--> [step therapy]
@@ -24,7 +31,9 @@ A knowledge graph of facts, concepts, and typed relations.
 
 **Retrieval:** Graph traversal from entry points, not flat similarity search. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges, returning a connected subgraph. Unrelated facts — even if embedding-similar — are excluded by topology.
 
-**Why this matters:** RAG returns the top-K similar chunks. Engram returns a *connected subgraph* where relationships are explicit. Token cost scales with graph connectivity, not corpus size.
+**Why this matters:** RAG returns the top-K similar chunks. Graph traversal returns a *connected subgraph* where relationships are explicit. Token cost scales with graph connectivity, not corpus size.
+
+Projects with domain-specific types replace `SemanticMemory` with a custom adapter that implements `SemanticDomain`. The adapter works with its own types internally and serializes to `DomainResult` at the boundary — text content, relevance score, source ID, and opaque metadata.
 
 ### Procedural Memory — How the agent reasons
 
@@ -65,7 +74,7 @@ Each episode is a small subgraph:
 
 ```python
 # When the agent is about to make a similar call:
-ctx = memory.prepare_call("Determine prior auth for lumbar fusion")
+ctx = await memory.prepare_call("Determine prior auth for lumbar fusion")
 # ctx.warnings = ["Previous failure: missed step therapy documentation requirement"]
 # ctx.few_shot_examples = [successful prior auth for similar case]
 ```
@@ -76,7 +85,7 @@ There is no explicit budget allocator dividing tokens across subsystems. Instead
 
 | Subsystem | Structure | Why it's selective |
 |---|---|---|
-| Semantic | Knowledge graph | Traversal returns connected subgraph, not text blobs |
+| Semantic | Domain adapter (graph, custom store, etc.) | Adapter returns only relevant domain knowledge |
 | Procedural | Schema registry | Output schema reshapes the call, near-zero prompt tokens |
 | Episodic | Cue-tag-content graph | Reconstructive retrieval pulls specific episodes, not logs |
 
@@ -84,17 +93,19 @@ The token budget stays small because the structures don't return documents — t
 
 ## Consolidation
 
-Memory evolves through consolidation: episodic experiences become semantic facts, repeated patterns become procedural amendments, stale memories decay and evict.
+Memory evolves through consolidation: episodic experiences become domain knowledge, repeated patterns become procedural amendments, stale memories decay and evict.
+
+Consolidation writes go through the domain adapter's `absorb()` method — the domain decides the shape of stored knowledge, not the consolidation engine.
 
 Three triggers, one pathway:
 
 | Trigger | When | Example |
 |---|---|---|
 | Event-driven | On pattern detection | 3 failures on same task type → procedural amendment |
-| Periodic | Scheduled pass | Scan episodic store for clusters → extract semantic facts |
+| Periodic | Scheduled pass | Scan episodic store for clusters → extract domain facts |
 | Query-triggered | During retrieval | 5 similar episodes found → consolidate into one fact |
 
-All triggers produce a `ConsolidationEvent`. The consolidation engine processes these asynchronously using the LLM to generate clean summaries and fact extractions.
+All triggers produce a `ConsolidationEvent`. The consolidation engine processes these asynchronously using the LLM to generate clean summaries and fact extractions, then calls `domain.absorb()` to store the result.
 
 ### Lifecycle
 
@@ -118,7 +129,7 @@ The active procedure is always the one with no incoming `supersedes` edge.
 
 ## The Shared Graph
 
-All three subsystems operate on a single graph — a typed property graph where nodes are partitioned by type but edges can cross partitions. This is how consolidation creates links between episodic experiences and semantic facts without a separate join mechanism.
+All three subsystems operate on a single graph — a typed property graph where nodes are partitioned by type but edges can cross partitions. This is how consolidation creates links between episodic experiences and domain facts without a separate join mechanism.
 
 ```
 [episodic: "failed auth for knee replacement"]
@@ -133,9 +144,17 @@ Both implementations satisfy the `GraphStore` protocol:
 - **`MemoryGraph`** — in-memory, zero dependencies, good for testing and short-lived agents
 - **`PersistentGraph`** — wraps a `StorageBackend`, single source of truth on disk
 
-## Storage Backends
+The consumer creates the graph and passes it to both the domain adapter and `CognitiveMemory`:
 
-Pass a backend to `CognitiveMemory` for persistence. Without one, everything stays in-memory.
+```python
+graph = MemoryGraph()
+domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+memory = CognitiveMemory(domain=domain, embedding_provider=embedder, llm_provider=llm, graph=graph)
+```
+
+This ensures all subsystems share the same graph instance.
+
+## Storage Backends
 
 | Backend | Graph traversal | Vector search | Persistence | Dependencies |
 |---|---|---|---|---|
@@ -146,13 +165,19 @@ Pass a backend to `CognitiveMemory` for persistence. Without one, everything sta
 Kùzu is the recommended persistent backend — embedded (no server), native graph traversal via Cypher, and native vector similarity. Install with `pip install engram[kuzu]`.
 
 ```python
+from engram.backends.kuzu import KuzuBackend
+from engram.persistent_graph import PersistentGraph
+
 # In-memory (default)
-memory = CognitiveMemory(embedding_provider=embedder, llm_provider=llm)
+graph = MemoryGraph()
+domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+memory = CognitiveMemory(domain=domain, embedding_provider=embedder, llm_provider=llm, graph=graph)
 
 # Persistent with Kùzu
-from engram.backends.kuzu import KuzuBackend
 backend = KuzuBackend("./agent_memory", embedding_dim=768)
-memory = CognitiveMemory(embedding_provider=embedder, llm_provider=llm, backend=backend)
+graph = PersistentGraph(backend=backend)
+domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+memory = CognitiveMemory(domain=domain, embedding_provider=embedder, llm_provider=llm, graph=graph)
 ```
 
 ## Provider Model
@@ -164,11 +189,34 @@ Engram is a library, not a framework. It doesn't own the agent loop, call the LL
 
 ```python
 class EmbeddingProvider(Protocol):
-    def embed(self, text: str) -> list[float]: ...
-    def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
+    async def embed(self, text: str) -> list[float]: ...
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
 
 class LLMProvider(Protocol):
-    def generate(self, prompt: str, output_schema: dict | None = None) -> str: ...
+    async def generate(self, prompt: str, output_schema: dict | None = None) -> str: ...
 ```
 
+Both protocols are async. Storage backends stay synchronous (embedded DBs don't benefit from async); `PersistentGraph` bridges with `asyncio.to_thread`.
+
 The library prepares context (`prepare_call`) and records outcomes (`record_outcome`). Everything else — the agent loop, tool calling, the LLM client — is yours.
+
+## Domain Adapters
+
+The `SemanticDomain` protocol decouples engram from any particular knowledge representation:
+
+```python
+class SemanticDomain(Protocol):
+    async def retrieve(
+        self, task_description: str, task_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[DomainResult]: ...
+
+    async def absorb(
+        self, insights: list[str], source_episodes: list[MemoryNode],
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None: ...
+```
+
+`SemanticMemory` is the built-in generic implementation — text nodes with embeddings and graph traversal. Use it to get started, replace it when your domain needs custom types.
+
+Custom adapters work with their own types internally (Forces, Contradictions, clinical policies, etc.) and serialize to `DomainResult` at the boundary. The information loss from collapsing domain types to text is minimal because text is the LLM interface — what the model receives is always text.

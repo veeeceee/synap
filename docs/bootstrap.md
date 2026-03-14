@@ -6,13 +6,47 @@ Engram needs some initial data to be useful. Without it, semantic retrieval retu
 
 The LLM drafts structured memory from unstructured input. You review and accept. A wrong initial graph is worse than an empty one — it actively misleads retrieval.
 
+## Setup
+
+Bootstrap is constructed separately from `CognitiveMemory`. It operates on `SemanticMemory` and `EpisodicMemory` directly:
+
+```python
+from engram.bootstrap import Bootstrap
+from engram.graph import MemoryGraph
+from engram.semantic import SemanticMemory
+from engram.episodic import EpisodicMemory
+
+graph = MemoryGraph()
+embedder = your_embedder
+domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+episodic = EpisodicMemory(graph=graph, embedding_provider=embedder)
+
+bootstrap = Bootstrap(
+    semantic=domain,
+    episodic=episodic,
+    embedding_provider=embedder,
+    llm_provider=your_llm,
+)
+```
+
+After bootstrapping, pass the same `graph` and `domain` to `CognitiveMemory`:
+
+```python
+memory = CognitiveMemory(
+    domain=domain,
+    embedding_provider=embedder,
+    llm_provider=your_llm,
+    graph=graph,
+)
+```
+
 ## Semantic Bootstrapping
 
 Convert existing documents into a knowledge graph.
 
 ```python
 # Extract knowledge from documents
-proposed = memory.bootstrap.extract_knowledge(
+proposed = await bootstrap.extract_knowledge(
     texts=[
         open("payer_policies.md").read(),
         open("cpt_code_reference.md").read(),
@@ -34,7 +68,7 @@ print(proposed.summary())
 proposed.nodes[0].content = "Step therapy required before elective surgical intervention"
 
 # Accept — commits to the graph
-node_ids = memory.bootstrap.accept(proposed)
+node_ids = await bootstrap.accept(proposed)
 ```
 
 The LLM identifies:
@@ -57,7 +91,7 @@ The LLM identifies:
 Infer a procedure from an existing system prompt.
 
 ```python
-procedure = memory.bootstrap.infer_procedure(
+procedure = await bootstrap.infer_procedure(
     system_prompt=open("clinical_review_prompt.txt").read(),
     example_outputs=[{
         "determination": "approved",
@@ -74,8 +108,8 @@ print(f"Prerequisites: {procedure.prerequisite_fields}")
 # Modify if needed
 procedure.field_ordering.insert(0, "patient_diagnosis")
 
-# Register
-memory.procedural.register(procedure)
+# Register with CognitiveMemory
+await memory.procedural.register(procedure)
 ```
 
 The LLM identifies:
@@ -107,7 +141,7 @@ logs = [
     },
 ]
 
-episodes = memory.bootstrap.ingest_logs(logs, task_type="diagnose_bug")
+episodes = await bootstrap.ingest_logs(logs, task_type="diagnose_bug")
 ```
 
 Each log entry needs at minimum:
@@ -137,37 +171,57 @@ Recommended sequence:
 
 ```python
 from engram import CognitiveMemory, CapacityHints
+from engram.bootstrap import Bootstrap
 from engram.backends.kuzu import KuzuBackend
+from engram.persistent_graph import PersistentGraph
+from engram.semantic import SemanticMemory
+from engram.episodic import EpisodicMemory
 
 # Use a persistent backend so bootstrap data survives restarts
 backend = KuzuBackend("./agent_memory", embedding_dim=768)
+graph = PersistentGraph(backend=backend)
+embedder = your_embedder
+domain = SemanticMemory(graph=graph, embedding_provider=embedder)
+episodic = EpisodicMemory(graph=graph, embedding_provider=embedder)
 
-memory = CognitiveMemory(
-    embedding_provider=your_embedder,
+# Create bootstrap helper
+bootstrap = Bootstrap(
+    semantic=domain,
+    episodic=episodic,
+    embedding_provider=embedder,
     llm_provider=your_llm,
-    capacity=CapacityHints(max_context_tokens=8192),
-    backend=backend,
 )
 
 # 1. Bootstrap procedures
-procedure = memory.bootstrap.infer_procedure(
+procedure = await bootstrap.infer_procedure(
     system_prompt=open("system_prompt.txt").read(),
     example_outputs=[existing_output_1, existing_output_2],
 )
-memory.procedural.register(procedure)
 
 # 2. Bootstrap semantic knowledge
-proposed = memory.bootstrap.extract_knowledge(
+proposed = await bootstrap.extract_knowledge(
     texts=[open(f).read() for f in ["policies.md", "reference.md"]],
     domain_hint="your domain here",
 )
 print(proposed.summary())  # Review
-memory.bootstrap.accept(proposed)
+await bootstrap.accept(proposed)
 
 # 3. Optionally import historical logs
 if historical_logs:
-    memory.bootstrap.ingest_logs(historical_logs, task_type="your_task_type")
+    await bootstrap.ingest_logs(historical_logs, task_type="your_task_type")
+
+# Now create CognitiveMemory with the same graph and domain
+memory = CognitiveMemory(
+    domain=domain,
+    embedding_provider=embedder,
+    llm_provider=your_llm,
+    graph=graph,
+    capacity=CapacityHints(max_context_tokens=8192),
+)
+
+# Register the inferred procedure
+await memory.procedural.register(procedure)
 
 # Ready to use
-ctx = memory.prepare_call("Your first real task")
+ctx = await memory.prepare_call("Your first real task")
 ```

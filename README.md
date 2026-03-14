@@ -19,17 +19,26 @@ uv add engram --extra kuzu
 ## Quick Start
 
 ```python
-from engram import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome
+from engram import (
+    CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome,
+    SemanticMemory, MemoryGraph,
+)
+
+# Create the graph and domain adapter
+graph = MemoryGraph()
+domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)
 
 # You provide the embedding and LLM providers
 memory = CognitiveMemory(
+    domain=domain,
     embedding_provider=your_embedder,
     llm_provider=your_llm,
+    graph=graph,
     capacity=CapacityHints(max_context_tokens=8192),
 )
 
 # Register a procedure — field ordering IS the enforcement
-memory.procedural.register(Procedure(
+await memory.procedural.register(Procedure(
     task_type="diagnose_bug",
     description="Diagnose a bug from error logs and code context",
     schema={
@@ -42,18 +51,18 @@ memory.procedural.register(Procedure(
 ))
 
 # Seed knowledge
-memory.semantic.store("Stripe webhook payloads vary by event type; always validate shape")
+await domain.store("Stripe webhook payloads vary by event type; always validate shape")
 
 # Prepare context for an LLM call
-ctx = memory.prepare_call(
+ctx = await memory.prepare_call(
     task_description="Diagnose TypeError in payment webhook handler"
 )
 # ctx.output_schema → enforces: classify error → find root cause → THEN propose fix
-# ctx.semantic_context → relevant facts from the knowledge graph
+# ctx.domain_context → relevant facts from the domain adapter
 # ctx.warnings → "Last time you misdiagnosed a similar TypeError..."
 
 # Record what happened
-memory.record_outcome(
+await memory.record_outcome(
     task_description="Diagnose TypeError in payment webhook handler",
     input_data={"error": "Cannot read property 'amount' of undefined"},
     output={"error_classification": "null reference", "root_cause": "...", "fix_proposal": "..."},
@@ -62,18 +71,45 @@ memory.record_outcome(
 )
 ```
 
+## Domain Adapters
+
+Engram's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools.
+
+```python
+from engram.protocols import SemanticDomain
+from engram.types import DomainResult, MemoryNode
+
+class MyDomain:
+    """Implements SemanticDomain — retrieves and absorbs domain knowledge."""
+
+    async def retrieve(self, task_description, task_type=None, metadata=None):
+        # Return domain knowledge relevant to this task
+        return [DomainResult(content="...", relevance=0.9, source_id="...")]
+
+    async def absorb(self, insights, source_episodes, metadata=None):
+        # Store consolidated insights in your domain's schema
+        return "domain_node_id"
+```
+
+`SemanticMemory` is the built-in generic implementation — text nodes with embeddings and graph traversal. Use it to get started, replace it when your domain needs custom types.
+
 ## Persistence
 
 By default, the graph lives in memory. Pass a storage backend for persistence:
 
 ```python
 from engram.backends.kuzu import KuzuBackend
+from engram.persistent_graph import PersistentGraph
 
 backend = KuzuBackend("./agent_memory", embedding_dim=768)
+graph = PersistentGraph(backend=backend)
+domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)
+
 memory = CognitiveMemory(
+    domain=domain,
     embedding_provider=your_embedder,
     llm_provider=your_llm,
-    backend=backend,  # Knowledge, episodes, and procedures survive restarts
+    graph=graph,
 )
 ```
 
@@ -88,21 +124,31 @@ memory = CognitiveMemory(
 - [Architecture & Concepts](docs/architecture.md) — How the three memory subsystems work and why
 - [API Reference](docs/api.md) — Complete interface documentation
 - [Bootstrap Guide](docs/bootstrap.md) — Cold start: seeding memory from existing data
-- [Examples](docs/examples.md) — Healthcare, coding agents, data pipelines
+- [Examples](docs/examples.md) — Geopolitical analysis, healthcare, coding agents
 
 ## How It Works
 
-**Semantic memory** stores facts as a knowledge graph. Retrieval is graph traversal from entry points — related facts come together with relationships explicit, unrelated facts are excluded by topology.
+**Semantic memory** is pluggable via the `SemanticDomain` protocol. The built-in `SemanticMemory` stores facts as a knowledge graph with retrieval via graph traversal. Projects with domain-specific types (contradictions, policies, etc.) implement the protocol directly.
 
 **Procedural memory** maps task types to output schemas where field ordering *is* the procedure. The model must generate intermediate reasoning before conclusions. Enforced structurally, not instructionally.
 
-**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are boosted during retrieval (more learning signal). Over time, repeated patterns consolidate into semantic facts or procedural amendments.
+**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are boosted during retrieval (more learning signal). Over time, repeated patterns consolidate into domain knowledge or procedural amendments.
 
-All three operate on a shared typed property graph. Edges cross partitions — this is how consolidation links episodic experiences to semantic facts without a separate join mechanism.
+All three operate on a shared typed property graph. Edges cross partitions — this is how consolidation links episodic experiences to domain facts without a separate join mechanism.
 
-## Design Specification
+## Async-First
 
-The full design spec with mechanistic rationale and research references is at [`~/.ai/insights/cognitive-memory-architecture-spec.md`](docs/spec-pointer.md).
+All public APIs are async. Engram is designed for integration with async frameworks (FastAPI, Sanic, etc.):
+
+```python
+# All operations are awaitable
+ctx = await memory.prepare_call("task description")
+episode_id = await memory.record_outcome(...)
+results = await memory.consolidate()
+stats = await memory.stats()
+```
+
+Storage backends stay synchronous (embedded DBs don't benefit from async). `PersistentGraph` bridges with `asyncio.to_thread`.
 
 ## License
 
