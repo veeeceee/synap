@@ -101,7 +101,10 @@ await memory.record_outcome(
 A coding agent that learns from past debugging experiences. Each diagnosis becomes an episode; repeated patterns consolidate into knowledge.
 
 ```python
-from engram import CognitiveMemory, CapacityHints, Procedure, SemanticMemory, MemoryGraph
+from engram import (
+    CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome,
+    SemanticMemory, MemoryGraph, ToolCall,
+)
 from engram.bootstrap import Bootstrap
 from engram.episodic import EpisodicMemory
 
@@ -173,6 +176,38 @@ ctx = await memory.prepare_call(
 # ctx.warnings might include past failures on similar bugs
 # ctx.domain_context includes the Stripe webhook validation fact
 # ctx.output_schema enforces: classify → find root cause → THEN propose fix
+
+# After diagnosis, record outcome with tool calls
+await memory.record_outcome(
+    task_description="Diagnose: TypeError in payment webhook handler",
+    input_data={"error": "TypeError: Cannot read property 'amount' of undefined"},
+    output={"error_classification": "null reference", "root_cause": "...", "fix_proposal": "..."},
+    outcome=EpisodeOutcome.SUCCESS,
+    task_type="diagnose_bug",
+    tags=["stripe", "webhook", "typescript"],
+    tool_calls=[
+        ToolCall(
+            query="find webhook handler source",
+            server="code-search",
+            tool_name="search_files",
+            parameters={"pattern": "handleWebhook"},
+            result_summary="Found src/webhooks/stripe.ts:45",
+            success=True,
+        ),
+        ToolCall(
+            query="check Stripe event type validation",
+            server="code-search",
+            tool_name="search_files",
+            parameters={"pattern": "event.type"},
+            result_summary="No validation found in handler",
+            success=True,
+        ),
+    ],
+)
+
+# Over time, consolidation detects tool usage patterns:
+# - If search_files frequently fails with certain parameter patterns → procedural amendment
+# - Tool call sequences are visible to the LLM during consolidation
 ```
 
 ## Data Pipeline Agent

@@ -78,6 +78,7 @@ episode_id = await memory.record_outcome(
     correction=None,                   # If CORRECTED, what was right
     task_type="prior_auth",            # Links to procedural memory
     tags=["aetna", "orthopedic"],      # Searchable tags
+    tool_calls=[...],                  # Optional: structured tool invocation records
 )
 ```
 
@@ -297,7 +298,7 @@ episodes = await memory.episodic.recall(
 
 ### find_patterns(task_type, min_occurrences=3) → list[EpisodicPattern]
 
-Detect repeated patterns for consolidation triggers.
+Detect repeated patterns for consolidation triggers. Detects both outcome-based patterns (e.g., 3+ failures on same task type) and tool-specific failure patterns (e.g., a particular tool failing across multiple episodes).
 
 ### generate_warnings(episodes) → list[str]
 
@@ -358,3 +359,38 @@ class ConsolidationTrigger(Enum):
     PERIODIC = "periodic" # Scheduled pass
     QUERY = "query"       # Lazy, during retrieval
 ```
+
+### ToolCall
+
+Structured record of a single tool invocation within an episode. Enables consolidation to detect tool usage patterns (wrong tool selection, parameter issues) and generate procedural amendments.
+
+```python
+@dataclass
+class ToolCall:
+    query: str              # What the agent was trying to accomplish
+    server: str             # MCP server (e.g., "news-mcp")
+    tool_name: str          # Specific tool (e.g., "search_articles")
+    parameters: dict        # What was passed to the tool
+    result_summary: str     # Truncated result (first 200 chars used in content node)
+    success: bool           # Whether the call succeeded
+```
+
+Sequence is implicit in list ordering — `episode.tool_calls[0]` ran first.
+
+### Episode
+
+```python
+@dataclass
+class Episode:
+    cue: str                           # What triggered the episode
+    content: dict[str, Any]            # Agent output
+    outcome: EpisodeOutcome            # Result
+    correction: str | None = None      # If CORRECTED, what was right
+    task_type: str | None = None       # Links to procedural memory
+    id: str = field(default_factory=uuid)
+    timestamp: datetime = field(default_factory=now)
+    tags: list[str] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
+```
+
+When an episode with tool calls is recorded, the tool call data is serialized into the content node (visible to LLM during consolidation) and tool names are stored in content node metadata (for pattern detection).

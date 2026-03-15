@@ -61,13 +61,25 @@ ctx = await memory.prepare_call(
 # ctx.domain_context → relevant facts from the domain adapter
 # ctx.warnings → "Last time you misdiagnosed a similar TypeError..."
 
-# Record what happened
+# Record what happened (including tool calls if any)
+from engram import ToolCall
+
 await memory.record_outcome(
     task_description="Diagnose TypeError in payment webhook handler",
     input_data={"error": "Cannot read property 'amount' of undefined"},
     output={"error_classification": "null reference", "root_cause": "...", "fix_proposal": "..."},
     outcome=EpisodeOutcome.SUCCESS,
     task_type="diagnose_bug",
+    tool_calls=[
+        ToolCall(
+            query="find webhook handler source",
+            server="code-search",
+            tool_name="search_files",
+            parameters={"pattern": "handleWebhook"},
+            result_summary="Found src/webhooks/stripe.ts:45",
+            success=True,
+        ),
+    ],
 )
 ```
 
@@ -132,7 +144,7 @@ memory = CognitiveMemory(
 
 **Procedural memory** maps task types to output schemas where field ordering *is* the procedure. The model must generate intermediate reasoning before conclusions. Enforced structurally, not instructionally.
 
-**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are boosted during retrieval (more learning signal). Over time, repeated patterns consolidate into domain knowledge or procedural amendments.
+**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are boosted during retrieval (more learning signal). Over time, repeated patterns consolidate into domain knowledge or procedural amendments. Episodes can include structured **tool call tracking** — which MCP server, tool, parameters, and result — enabling consolidation to detect tool usage patterns (wrong tool selection, parameter malformation) and generate procedural amendments.
 
 All three operate on a shared typed property graph. Edges cross partitions — this is how consolidation links episodic experiences to domain facts without a separate join mechanism.
 

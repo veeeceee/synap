@@ -79,6 +79,8 @@ ctx = await memory.prepare_call("Determine prior auth for lumbar fusion")
 # ctx.few_shot_examples = [successful prior auth for similar case]
 ```
 
+**Tool call tracking.** Episodes can include structured records of tool invocations — which MCP server, tool, parameters, result, and success status. This data is serialized into the content node (so the LLM sees it during consolidation) and used for pattern detection. When `find_patterns` detects a tool failing repeatedly across episodes, it surfaces a tool-specific failure pattern that triggers procedural amendments (e.g., "tool X requires parameter Y" or "use tool Z instead of X for this task type").
+
 ## Budget is Emergent
 
 There is no explicit budget allocator dividing tokens across subsystems. Instead, each subsystem's data structure produces inherently selective retrieval:
