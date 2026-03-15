@@ -19,6 +19,7 @@ from engram.types import (
     EpisodeOutcome,
     MemoryType,
     PreparedContext,
+    ToolCall,
 )
 
 
@@ -207,6 +208,7 @@ class CognitiveMemory:
         correction: str | None = None,
         task_type: str | None = None,
         tags: list[str] | None = None,
+        tool_calls: list[ToolCall] | None = None,
     ) -> str:
         """Record an episode after an LLM call.
 
@@ -222,6 +224,7 @@ class CognitiveMemory:
             correction=correction,
             task_type=task_type,
             tags=tags or [],
+            tool_calls=tool_calls or [],
         )
 
         episode_id = await self._episodic.record(episode)

@@ -94,6 +94,18 @@ class Procedure:
 
 
 @dataclass
+class ToolCall:
+    """A single tool invocation within an episode, capturing the full context."""
+
+    query: str              # what the agent was trying to accomplish
+    server: str             # MCP server (e.g. "news-mcp")
+    tool_name: str          # specific tool (e.g. "search_articles")
+    parameters: dict[str, Any]  # what was passed
+    result_summary: str     # truncated result
+    success: bool
+
+
+@dataclass
 class Episode:
     """A recorded agent experience with outcome."""
 
@@ -105,6 +117,7 @@ class Episode:
     id: str = field(default_factory=_uuid)
     timestamp: datetime = field(default_factory=_now)
     tags: list[str] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
 
 @dataclass

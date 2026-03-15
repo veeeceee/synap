@@ -12,6 +12,7 @@ from engram.types import (
     MemoryType,
     PreparedContext,
     Procedure,
+    ToolCall,
 )
 from engram.protocols import (
     EmbeddingProvider,
@@ -57,4 +58,5 @@ __all__ = [
     "SemanticDomain",
     "SemanticMemory",
     "StorageBackend",
+    "ToolCall",
 ]
