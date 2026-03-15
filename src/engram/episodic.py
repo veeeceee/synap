@@ -61,7 +61,18 @@ class EpisodicMemory:
         )
         await self._graph.add_node(cue_node)
 
-        content_str = json.dumps(episode.content, default=str)
+        content_parts = [json.dumps(episode.content, default=str)]
+        if episode.tool_calls:
+            tool_lines = []
+            for i, tc in enumerate(episode.tool_calls):
+                tool_lines.append(
+                    f"[{i}] {tc.server}/{tc.tool_name} "
+                    f"query={tc.query!r} success={tc.success} "
+                    f"params={json.dumps(tc.parameters, default=str)} "
+                    f"result={tc.result_summary[:200]}"
+                )
+            content_parts.append("Tool calls:\n" + "\n".join(tool_lines))
+        content_str = "\n\n".join(content_parts)
         content_node = MemoryNode(
             content=content_str,
             node_type=MemoryType.EPISODIC,
@@ -69,6 +80,7 @@ class EpisodicMemory:
             metadata={
                 "episode_id": episode.id,
                 "role": "content",
+                "tool_names": [tc.tool_name for tc in episode.tool_calls],
             },
         )
         await self._graph.add_node(content_node)
@@ -177,6 +189,29 @@ class EpisodicMemory:
                         occurrences=len(eps),
                         episode_ids=[e.id for e in eps],
                         outcome=outcome,
+                    )
+                )
+
+        # Tool-specific failure patterns: group by (tool_name, success=False)
+        tool_failures: dict[str, list[Episode]] = {}
+        for episode in self._episodes.values():
+            if episode.task_type != task_type:
+                continue
+            for tc in episode.tool_calls:
+                if not tc.success:
+                    tool_failures.setdefault(tc.tool_name, []).append(episode)
+
+        for tool_name, eps in tool_failures.items():
+            # Deduplicate episodes (one episode may have multiple failed calls to same tool)
+            unique_eps = list({e.id: e for e in eps}.values())
+            if len(unique_eps) >= min_occurrences:
+                patterns.append(
+                    EpisodicPattern(
+                        task_type=task_type,
+                        pattern_description=f"Tool '{tool_name}' failed in {len(unique_eps)} episodes",
+                        occurrences=len(unique_eps),
+                        episode_ids=[e.id for e in unique_eps],
+                        outcome=EpisodeOutcome.FAILURE,
                     )
                 )
 
