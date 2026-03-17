@@ -145,7 +145,7 @@ async def test_ingest_logs():
 
     episodes = await bootstrap.ingest_logs(logs, task_type="diagnose_bug")
     assert len(episodes) == 3
-    assert episodic.episode_count == 3
+    assert await episodic.episode_count() == 3
     assert episodes[0].outcome == EpisodeOutcome.SUCCESS
     assert episodes[1].outcome == EpisodeOutcome.FAILURE
     assert episodes[2].outcome == EpisodeOutcome.CORRECTED

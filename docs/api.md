@@ -92,12 +92,12 @@ for r in results:
     print(f"Consolidated: domain_id={r.domain_id}, success={r.success}")
 ```
 
-### evaluate() → EvaluationReport
+### await evaluate() → EvaluationReport
 
-Generate metrics from episodic outcome data. (Synchronous — reads from in-memory state.)
+Generate metrics from episodic outcome data.
 
 ```python
-report = memory.evaluate()
+report = await memory.evaluate()
 report.outcome_trend      # SUCCESS rate over time, by task_type
 report.retrieval_hit_rate # % of prepare_call with non-empty context
 report.warning_effectiveness  # Success rate after warnings vs baseline
@@ -296,7 +296,7 @@ episodes = await memory.episodic.recall(
 )
 ```
 
-### find_patterns(task_type, min_occurrences=3) → list[EpisodicPattern]
+### await find_patterns(task_type, min_occurrences=3) → list[EpisodicPattern]
 
 Detect repeated patterns for consolidation triggers. Detects both outcome-based patterns (e.g., 3+ failures on same task type) and tool-specific failure patterns (e.g., a particular tool failing across multiple episodes).
 

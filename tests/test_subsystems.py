@@ -4,7 +4,7 @@ from engram.episodic import EpisodicMemory
 from engram.graph import MemoryGraph
 from engram.procedural import ProceduralMemory
 from engram.semantic import SemanticMemory
-from engram.types import Episode, EpisodeOutcome, MemoryType, Procedure
+from engram.types import Episode, EpisodeOutcome, MemoryType, Procedure, ToolCall
 from tests.conftest import FakeEmbedder
 
 
@@ -156,7 +156,7 @@ async def test_episodic_record_and_recall(graph: MemoryGraph, embedder: FakeEmbe
         task_type="diagnose_bug",
     )
     await ep.record(episode)
-    assert ep.episode_count == 1
+    assert await ep.episode_count() == 1
     assert await graph.node_count(MemoryType.EPISODIC) == 3
 
     recalled = await ep.recall("TypeError in webhook handler")
@@ -200,7 +200,7 @@ async def test_episodic_find_patterns(graph: MemoryGraph, embedder: FakeEmbedder
             )
         )
 
-    patterns = ep.find_patterns("prior_auth", min_occurrences=3)
+    patterns = await ep.find_patterns("prior_auth", min_occurrences=3)
     assert len(patterns) == 1
     assert patterns[0].outcome == EpisodeOutcome.FAILURE
     assert patterns[0].occurrences == 3
@@ -227,3 +227,91 @@ async def test_episodic_generate_warnings(graph: MemoryGraph, embedder: FakeEmbe
     assert len(warnings) == 2
     assert "failure" in warnings[0].lower() or "Previous" in warnings[0]
     assert "99214" in warnings[1]
+
+
+async def test_episodic_recall_reconstructs_from_graph(
+    graph: MemoryGraph, embedder: FakeEmbedder
+):
+    """Recall reconstructs episodes from graph after session cache is cleared."""
+    ep = EpisodicMemory(graph=graph, embedding_provider=embedder)
+
+    episode = Episode(
+        cue="TypeError in stripe webhook handler",
+        content={"error": "Cannot read property 'amount'", "fix": "add null check"},
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="diagnose_bug",
+        tags=["stripe", "webhook"],
+    )
+    await ep.record(episode)
+
+    # Clear session cache — simulates process restart
+    ep._episodes.clear()
+
+    recalled = await ep.recall("TypeError in webhook handler")
+    assert len(recalled) == 1
+    assert recalled[0].id == episode.id
+    assert recalled[0].cue == episode.cue
+    assert recalled[0].content == episode.content
+    assert recalled[0].outcome == episode.outcome
+    assert recalled[0].task_type == episode.task_type
+    assert recalled[0].tags == episode.tags
+
+
+async def test_episodic_recall_reconstructs_with_tool_calls(
+    graph: MemoryGraph, embedder: FakeEmbedder
+):
+    """Recall reconstructs tool calls from graph metadata."""
+    ep = EpisodicMemory(graph=graph, embedding_provider=embedder)
+
+    episode = Episode(
+        cue="Find the webhook handler source",
+        content={"result": "found handler"},
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="code_search",
+        tool_calls=[
+            ToolCall(
+                query="find webhook handler",
+                server="code-search",
+                tool_name="search_files",
+                parameters={"pattern": "handleWebhook"},
+                result_summary="Found src/webhooks/stripe.ts:45",
+                success=True,
+            ),
+        ],
+    )
+    await ep.record(episode)
+
+    # Clear session cache
+    ep._episodes.clear()
+
+    recalled = await ep.recall("webhook handler source")
+    assert len(recalled) == 1
+    assert len(recalled[0].tool_calls) == 1
+    tc = recalled[0].tool_calls[0]
+    assert tc.tool_name == "search_files"
+    assert tc.server == "code-search"
+    assert tc.success is True
+
+
+async def test_episodic_recall_reconstructs_correction(
+    graph: MemoryGraph, embedder: FakeEmbedder
+):
+    """Recall reconstructs correction field from outcome node metadata."""
+    ep = EpisodicMemory(graph=graph, embedding_provider=embedder)
+
+    episode = Episode(
+        cue="wrong billing code used",
+        content={"code": "99213"},
+        outcome=EpisodeOutcome.CORRECTED,
+        correction="Should have been 99214",
+        task_type="billing",
+    )
+    await ep.record(episode)
+
+    # Clear session cache
+    ep._episodes.clear()
+
+    recalled = await ep.recall("billing code")
+    assert len(recalled) == 1
+    assert recalled[0].correction == "Should have been 99214"
+    assert recalled[0].outcome == EpisodeOutcome.CORRECTED

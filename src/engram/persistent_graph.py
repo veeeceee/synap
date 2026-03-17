@@ -107,13 +107,10 @@ class PersistentGraph:
         await asyncio.to_thread(self._backend.delete_node, node_id)
 
     async def node_count(self, node_type: MemoryType | None = None) -> int:
-        nodes = await asyncio.to_thread(
-            self._backend.query_nodes,
+        return await asyncio.to_thread(
+            self._backend.node_count,
             node_type.value if node_type else None,
-            None,
-            100_000,
         )
-        return len(nodes)
 
     # --- Edge operations ---
 
@@ -131,20 +128,10 @@ class PersistentGraph:
         await asyncio.to_thread(self._backend.delete_edge, edge_id)
 
     async def edge_count(self, relation_type: str | None = None) -> int:
-        all_nodes = await asyncio.to_thread(
-            self._backend.query_nodes, None, None, 100_000
+        return await asyncio.to_thread(
+            self._backend.edge_count,
+            relation_type,
         )
-        seen: set[str] = set()
-        count = 0
-        for d in all_nodes:
-            edges = await asyncio.to_thread(self._backend.load_edges, d["id"])
-            for e in edges:
-                eid = e["id"]
-                if eid not in seen:
-                    seen.add(eid)
-                    if relation_type is None or e["relation_type"] == relation_type:
-                        count += 1
-        return count
 
     # --- Traversal ---
 

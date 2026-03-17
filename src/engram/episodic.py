@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from engram._utils import cosine_similarity
 from engram.protocols import EmbeddingProvider, GraphStore
 from engram.types import (
     CapacityHints,
@@ -14,6 +15,7 @@ from engram.types import (
     MemoryEdge,
     MemoryNode,
     MemoryType,
+    ToolCall,
 )
 
 
@@ -81,6 +83,18 @@ class EpisodicMemory:
                 "episode_id": episode.id,
                 "role": "content",
                 "tool_names": [tc.tool_name for tc in episode.tool_calls],
+                "episode_content": episode.content,
+                "tool_calls": [
+                    {
+                        "query": tc.query,
+                        "server": tc.server,
+                        "tool_name": tc.tool_name,
+                        "parameters": tc.parameters,
+                        "result_summary": tc.result_summary,
+                        "success": tc.success,
+                    }
+                    for tc in episode.tool_calls
+                ],
             },
         )
         await self._graph.add_node(content_node)
@@ -96,6 +110,7 @@ class EpisodicMemory:
                 "episode_id": episode.id,
                 "role": "outcome",
                 "outcome": episode.outcome.value,
+                "correction": episode.correction,
             },
         )
         await self._graph.add_node(outcome_node)
@@ -143,10 +158,7 @@ class EpisodicMemory:
 
         episodes: list[tuple[float, Episode]] = []
         for sim, cue_node in cue_nodes:
-            episode_id = cue_node.metadata.get("episode_id")
-            if episode_id is None:
-                continue
-            episode = self._episodes.get(episode_id)
+            episode = await self._reconstruct_episode(cue_node)
             if episode is None:
                 continue
             if outcome_filter and episode.outcome != outcome_filter:
@@ -168,15 +180,67 @@ class EpisodicMemory:
 
         return results
 
-    def find_patterns(
+    async def _reconstruct_episode(self, cue_node: MemoryNode) -> Episode | None:
+        """Reconstruct an Episode from its graph subgraph (cue→content→outcome)."""
+        episode_id = cue_node.metadata.get("episode_id")
+        if episode_id is None:
+            return None
+
+        # Session cache hit
+        if episode_id in self._episodes:
+            return self._episodes[episode_id]
+
+        # Traverse cue→produced→content→resulted_in→outcome
+        traversed = await self._graph.traverse(
+            start=cue_node.id,
+            edge_types=["produced", "resulted_in"],
+            max_depth=2,
+            max_nodes=10,
+        )
+
+        content_node = None
+        outcome_node = None
+        for node in traversed:
+            role = node.metadata.get("role")
+            if role == "content" and node.metadata.get("episode_id") == episode_id:
+                content_node = node
+            elif role == "outcome" and node.metadata.get("episode_id") == episode_id:
+                outcome_node = node
+
+        if content_node is None or outcome_node is None:
+            return None
+
+        # Reconstruct tool calls from structured metadata
+        tool_calls = [
+            ToolCall(**tc_data)
+            for tc_data in content_node.metadata.get("tool_calls", [])
+        ]
+
+        episode = Episode(
+            id=episode_id,
+            cue=cue_node.content,
+            content=content_node.metadata.get("episode_content", {}),
+            outcome=EpisodeOutcome(outcome_node.metadata["outcome"]),
+            correction=outcome_node.metadata.get("correction"),
+            task_type=cue_node.metadata.get("task_type") or None,
+            timestamp=cue_node.created_at,
+            tags=cue_node.metadata.get("tags", []),
+            tool_calls=tool_calls,
+        )
+
+        # Cache for this session
+        self._episodes[episode_id] = episode
+        return episode
+
+    async def find_patterns(
         self,
         task_type: str,
         min_occurrences: int = 3,
     ) -> list[EpisodicPattern]:
+        episodes = await self._episodes_for_task_type(task_type)
+
         by_outcome: dict[EpisodeOutcome, list[Episode]] = {}
-        for episode in self._episodes.values():
-            if episode.task_type != task_type:
-                continue
+        for episode in episodes:
             by_outcome.setdefault(episode.outcome, []).append(episode)
 
         patterns: list[EpisodicPattern] = []
@@ -194,9 +258,7 @@ class EpisodicMemory:
 
         # Tool-specific failure patterns: group by (tool_name, success=False)
         tool_failures: dict[str, list[Episode]] = {}
-        for episode in self._episodes.values():
-            if episode.task_type != task_type:
-                continue
+        for episode in episodes:
             for tc in episode.tool_calls:
                 if not tc.success:
                     tool_failures.setdefault(tc.tool_name, []).append(episode)
@@ -249,23 +311,41 @@ class EpisodicMemory:
                 continue
             if task_type and node.metadata.get("task_type") != task_type:
                 continue
-            sim = _cosine_similarity(query_embedding, node.embedding) if node.embedding else 0.0
+            sim = cosine_similarity(query_embedding, node.embedding) if node.embedding else 0.0
             candidates.append((sim, node))
 
         candidates.sort(key=lambda x: x[0], reverse=True)
         return candidates[:limit]
 
-    @property
-    def episode_count(self) -> int:
-        return len(self._episodes)
+    async def episode_count(self) -> int:
+        cue_nodes = await self._graph.query(
+            node_type=MemoryType.EPISODIC,
+            filters={"role": "cue"},
+        )
+        return len(cue_nodes)
 
+    async def all_episodes(self) -> list[Episode]:
+        """Reconstruct all episodes from the graph."""
+        cue_nodes = await self._graph.query(
+            node_type=MemoryType.EPISODIC,
+            filters={"role": "cue"},
+        )
+        episodes = []
+        for cue_node in cue_nodes:
+            episode = await self._reconstruct_episode(cue_node)
+            if episode is not None:
+                episodes.append(episode)
+        return episodes
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    if len(a) != len(b) or len(a) == 0:
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+    async def _episodes_for_task_type(self, task_type: str) -> list[Episode]:
+        """Reconstruct all episodes for a given task type from the graph."""
+        cue_nodes = await self._graph.query(
+            node_type=MemoryType.EPISODIC,
+            filters={"role": "cue", "task_type": task_type},
+        )
+        episodes = []
+        for cue_node in cue_nodes:
+            episode = await self._reconstruct_episode(cue_node)
+            if episode is not None:
+                episodes.append(episode)
+        return episodes

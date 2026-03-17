@@ -281,7 +281,7 @@ await memory.record_outcome(
 Works the same across all domains:
 
 ```python
-report = memory.evaluate()
+report = await memory.evaluate()
 
 print(f"Retrieval hit rate: {report.retrieval_hit_rate:.0%}")
 print(f"Warning effectiveness: {report.warning_effectiveness:.0%}")

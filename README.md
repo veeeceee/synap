@@ -1,5 +1,9 @@
 # Engram
 
+[![CI](https://github.com/veeeceee/engram/actions/workflows/ci.yml/badge.svg)](https://github.com/veeeceee/engram/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/engram)](https://pypi.org/project/engram/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Cognitive memory architecture for LLM agents.
 
 Engram manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Engram uses structurally selective retrieval (graph traversal, not similarity search) and output-side enforcement (procedures become output schemas, not instructions).
@@ -162,6 +166,10 @@ stats = await memory.stats()
 
 Storage backends stay synchronous (embedded DBs don't benefit from async). `PersistentGraph` bridges with `asyncio.to_thread`.
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.

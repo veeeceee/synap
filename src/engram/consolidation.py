@@ -59,7 +59,7 @@ class ConsolidationEngine:
         if episode.task_type is None:
             return None
 
-        patterns = self._episodic.find_patterns(
+        patterns = await self._episodic.find_patterns(
             task_type=episode.task_type,
             min_occurrences=self._config.min_pattern_occurrences,
         )
@@ -110,10 +110,11 @@ class ConsolidationEngine:
         events: list[ConsolidationEvent] = []
         seen_task_types: set[str] = set()
 
-        for episode in self._episodic._episodes.values():
+        all_episodes = await self._episodic.all_episodes()
+        for episode in all_episodes:
             if episode.task_type and episode.task_type not in seen_task_types:
                 seen_task_types.add(episode.task_type)
-                patterns = self._episodic.find_patterns(
+                patterns = await self._episodic.find_patterns(
                     task_type=episode.task_type,
                     min_occurrences=self._config.min_pattern_occurrences,
                 )

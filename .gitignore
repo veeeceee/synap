@@ -8,3 +8,9 @@ build/
 .pytest_cache/
 *.db
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+.env
+.env.local

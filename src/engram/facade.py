@@ -276,17 +276,18 @@ class CognitiveMemory:
             procedural_nodes=await self._graph.node_count(MemoryType.PROCEDURAL),
             episodic_nodes=await self._graph.node_count(MemoryType.EPISODIC),
             total_edges=await self._graph.edge_count(),
-            total_episodes=self._episodic.episode_count,
+            total_episodes=await self._episodic.episode_count(),
             pending_consolidation=len(self._consolidation._queue),
         )
 
-    def evaluate(self) -> EvaluationReport:
+    async def evaluate(self) -> EvaluationReport:
         """Generate evaluation report from episodic outcome data."""
         # Outcome trends by task type
         outcome_trend: dict[str, list[float]] = {}
         task_episodes: dict[str, list[Episode]] = {}
 
-        for ep in self._episodic._episodes.values():
+        all_episodes = await self._episodic.all_episodes()
+        for ep in all_episodes:
             key = ep.task_type or "unknown"
             task_episodes.setdefault(key, []).append(ep)
 
@@ -317,9 +318,13 @@ class CognitiveMemory:
             else 0.0
         )
 
-        # Cold spots: task types with low retrieval hits
+        # Hot spots: task types with low recent success rate (problem areas)
+        # Cold spots: task types with too few episodes to form patterns
         cold_spots = []
         hot_spots = []
+        for task_type, eps in task_episodes.items():
+            if len(eps) <= 2:
+                cold_spots.append(task_type)
         for task_type, rates in outcome_trend.items():
             if rates and rates[-1] < 0.5:
                 hot_spots.append(task_type)

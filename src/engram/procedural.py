@@ -36,7 +36,16 @@ class ProceduralMemory:
             embedding=await self._embedder.embed(
                 f"{procedure.task_type} {procedure.description}"
             ),
-            metadata={"task_type": procedure.task_type},
+            metadata={
+                "task_type": procedure.task_type,
+                "description": procedure.description,
+                "schema": procedure.schema,
+                "field_ordering": procedure.field_ordering,
+                "prerequisite_fields": procedure.prerequisite_fields,
+                "system_prompt_fragment": procedure.system_prompt_fragment,
+                "procedure_metadata": procedure.metadata,
+                "episode_ids": procedure.episode_ids,
+            },
         )
         await self._graph.add_node(node)
 
@@ -58,21 +67,28 @@ class ProceduralMemory:
         return procedure.id
 
     async def match(self, task_description: str) -> Procedure | None:
-        if not self._procedures:
+        if await self._graph.node_count(MemoryType.PROCEDURAL) == 0:
             return None
 
-        for proc in self._procedures.values():
-            if proc.task_type in task_description:
-                if await self._is_active(proc.id):
+        # Structural match: task_type substring in description
+        nodes = await self._graph.query(
+            node_type=MemoryType.PROCEDURAL, limit=100
+        )
+        for node in nodes:
+            task_type = node.metadata.get("task_type", "")
+            if task_type and task_type in task_description:
+                proc = await self._reconstruct_procedure(node)
+                if proc and await self._is_active(proc.id):
                     return proc
 
+        # Fallback: similarity search
         query_embedding = await self._embedder.embed(task_description)
         similar = await self._graph.similarity_search(
             query_embedding, node_type=MemoryType.PROCEDURAL, limit=5
         )
 
         for node in similar:
-            proc = self._procedures.get(node.id)
+            proc = await self._reconstruct_procedure(node)
             if proc and await self._is_active(proc.id):
                 return proc
 
@@ -108,15 +124,51 @@ class ProceduralMemory:
             "additionalProperties": False,
         }
 
-    def get_procedure(self, procedure_id: str) -> Procedure | None:
-        return self._procedures.get(procedure_id)
+    async def get_procedure(self, procedure_id: str) -> Procedure | None:
+        if procedure_id in self._procedures:
+            return self._procedures[procedure_id]
+        node = await self._graph.get_node(procedure_id)
+        if node is None or node.node_type != MemoryType.PROCEDURAL:
+            return None
+        return await self._reconstruct_procedure(node)
 
-    def list_procedures(self, active_only: bool = True) -> list[Procedure]:
-        if not active_only:
-            return list(self._procedures.values())
-        # Note: can't await in sync property, but this is a sync helper
-        # For active filtering in async context, use match() instead
-        return list(self._procedures.values())
+    async def list_procedures(self, active_only: bool = True) -> list[Procedure]:
+        nodes = await self._graph.query(node_type=MemoryType.PROCEDURAL)
+        procedures = []
+        for node in nodes:
+            proc = await self._reconstruct_procedure(node)
+            if proc is None:
+                continue
+            if active_only and not await self._is_active(proc.id):
+                continue
+            procedures.append(proc)
+        return procedures
+
+    async def _reconstruct_procedure(self, node: MemoryNode) -> Procedure | None:
+        """Reconstruct a Procedure from its graph node metadata."""
+        if node.id in self._procedures:
+            return self._procedures[node.id]
+
+        meta = node.metadata
+        task_type = meta.get("task_type")
+        if task_type is None:
+            return None
+
+        procedure = Procedure(
+            id=node.id,
+            task_type=task_type,
+            description=meta.get("description", ""),
+            schema=meta.get("schema", {}),
+            field_ordering=meta.get("field_ordering", []),
+            prerequisite_fields=meta.get("prerequisite_fields", {}),
+            system_prompt_fragment=meta.get("system_prompt_fragment"),
+            metadata=meta.get("procedure_metadata", {}),
+            episode_ids=meta.get("episode_ids", []),
+        )
+
+        self._procedures[node.id] = procedure
+        self._task_type_index[task_type] = node.id
+        return procedure
 
     async def _is_active(self, procedure_id: str) -> bool:
         return not await self._graph.has_incoming_edge(procedure_id, "supersedes")

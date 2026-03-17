@@ -141,7 +141,7 @@ async def test_evaluation_report():
             task_type="test_type",
         )
 
-    report = memory.evaluate()
+    report = await memory.evaluate()
     assert "test_type" in report.outcome_trend
     assert len(report.outcome_trend["test_type"]) >= 1
 

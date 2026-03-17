@@ -268,6 +268,32 @@ class KuzuBackend:
             parameters={"id": edge_id},
         )
 
+    # --- Counts ---
+
+    def node_count(self, node_type: str | None = None) -> int:
+        if node_type:
+            result = self._conn.execute(
+                "MATCH (n:MemoryNode) WHERE n.node_type = $ntype RETURN count(n)",
+                parameters={"ntype": node_type},
+            )
+        else:
+            result = self._conn.execute(
+                "MATCH (n:MemoryNode) RETURN count(n)"
+            )
+        return result.get_next()[0] if result.has_next() else 0
+
+    def edge_count(self, relation_type: str | None = None) -> int:
+        if relation_type:
+            result = self._conn.execute(
+                "MATCH ()-[e:MemoryEdge]->() WHERE e.relation_type = $rtype RETURN count(e)",
+                parameters={"rtype": relation_type},
+            )
+        else:
+            result = self._conn.execute(
+                "MATCH ()-[e:MemoryEdge]->() RETURN count(e)"
+            )
+        return result.get_next()[0] if result.has_next() else 0
+
     # --- Vector similarity search ---
 
     def similarity_search(

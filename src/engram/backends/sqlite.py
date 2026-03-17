@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from engram._utils import cosine_similarity
+
 
 class SQLiteBackend:
     """Persistent storage using SQLite.
@@ -157,6 +159,25 @@ class SQLiteBackend:
                 results.append(data)
         return results
 
+    def node_count(self, node_type: str | None = None) -> int:
+        if node_type:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE node_type = ?", (node_type,)
+            ).fetchone()
+        else:
+            row = self._conn.execute("SELECT COUNT(*) FROM nodes").fetchone()
+        return row[0]
+
+    def edge_count(self, relation_type: str | None = None) -> int:
+        if relation_type:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM edges WHERE relation_type = ?",
+                (relation_type,),
+            ).fetchone()
+        else:
+            row = self._conn.execute("SELECT COUNT(*) FROM edges").fetchone()
+        return row[0]
+
     def delete_node(self, node_id: str) -> None:
         self._conn.execute(
             "DELETE FROM edges WHERE source_id = ? OR target_id = ?",
@@ -187,7 +208,7 @@ class SQLiteBackend:
 
         for row in rows:
             node_embedding = json.loads(row["embedding"])
-            sim = _cosine_similarity(embedding, node_embedding)
+            sim = cosine_similarity(embedding, node_embedding)
             scored.append((sim, json.loads(row["data"])))
 
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -237,14 +258,3 @@ class SQLiteBackend:
             self._conn.close()
         except Exception:
             pass
-
-
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    if len(a) != len(b) or len(a) == 0:
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
