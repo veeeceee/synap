@@ -134,7 +134,7 @@ await memory.record_outcome(
 
 ## Domain Adapters
 
-Synap's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools.
+Synap's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types — clinical policies for healthcare, code patterns for dev tools, schema rules for data pipelines.
 
 ```python
 from synap.protocols import SemanticDomain
@@ -203,7 +203,7 @@ graph = PersistentGraph(backend=backend)
 - [Architecture & Concepts](docs/architecture.md) — How the three memory subsystems work and why
 - [API Reference](docs/api.md) — Complete interface documentation
 - [Bootstrap Guide](docs/bootstrap.md) — Cold start: seeding memory from existing data
-- [Examples](docs/examples.md) — Geopolitical analysis, healthcare, coding agents
+- [Examples](docs/examples.md) — Healthcare, coding agents, data pipelines
 
 ## How It Works
 
