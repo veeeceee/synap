@@ -10,7 +10,7 @@ Usage:
     # With custom database path
     ENGRAM_DB=./my_memory python -m engram.mcp_server
 
-Requires: pip install engram[kuzu] fastmcp
+Requires: pip install engram-memory[kuzu] fastmcp
 """
 
 from __future__ import annotations

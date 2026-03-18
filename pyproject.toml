@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "engram"
+name = "engram-memory"
 version = "0.1.0"
 description = "Cognitive memory architecture for LLM agents"
 readme = "README.md"

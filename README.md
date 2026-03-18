@@ -1,7 +1,7 @@
 # Engram
 
 [![CI](https://github.com/veeeceee/engram/actions/workflows/ci.yml/badge.svg)](https://github.com/veeeceee/engram/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/engram)](https://pypi.org/project/engram/)
+[![PyPI version](https://img.shields.io/pypi/v/engram-memory)](https://pypi.org/project/engram-memory/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Cognitive memory architecture for LLM agents.
@@ -20,13 +20,13 @@ Most agent memory systems (Mem0, Letta, Zep, LangMem) treat memory as a retrieva
 ## Installation
 
 ```bash
-pip install engram
+pip install engram-memory
 
 # With Kùzu for persistent graph storage (recommended)
-pip install engram[kuzu]
+pip install engram-memory[kuzu]
 
 # With uv
-uv add engram --extra kuzu
+uv add engram-memory --extra kuzu
 ```
 
 ## Providers
@@ -177,7 +177,7 @@ memory = CognitiveMemory(
 For multi-process deployments (web servers, worker pools), use the Postgres backend:
 
 ```bash
-pip install engram[postgres]
+pip install engram-memory[postgres]
 ```
 
 ```python

@@ -165,7 +165,7 @@ This ensures all subsystems share the same graph instance.
 | `SQLiteBackend` | Python BFS | Python cosine | File-based | `sqlite3` (stdlib) |
 | `PostgresBackend` | Recursive CTE | pgvector `<=>` cosine distance | Server-based | `asyncpg` |
 
-Kùzu is the recommended persistent backend — embedded (no server), native graph traversal via Cypher, and native vector similarity. Install with `pip install engram[kuzu]`.
+Kùzu is the recommended persistent backend — embedded (no server), native graph traversal via Cypher, and native vector similarity. Install with `pip install engram-memory[kuzu]`.
 
 ```python
 from engram.backends.kuzu import KuzuBackend
