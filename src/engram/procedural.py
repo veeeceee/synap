@@ -66,17 +66,33 @@ class ProceduralMemory:
 
         return procedure.id
 
-    async def match(self, task_description: str) -> Procedure | None:
+    async def match(
+        self,
+        task_description: str,
+        task_type: str | None = None,
+    ) -> Procedure | None:
         if await self._graph.node_count(MemoryType.PROCEDURAL) == 0:
             return None
+
+        # Exact task_type match (highest priority)
+        if task_type:
+            nodes = await self._graph.query(
+                node_type=MemoryType.PROCEDURAL,
+                filters={"task_type": task_type},
+                limit=10,
+            )
+            for node in nodes:
+                proc = await self._reconstruct_procedure(node)
+                if proc and await self._is_active(proc.id):
+                    return proc
 
         # Structural match: task_type substring in description
         nodes = await self._graph.query(
             node_type=MemoryType.PROCEDURAL, limit=100
         )
         for node in nodes:
-            task_type = node.metadata.get("task_type", "")
-            if task_type and task_type in task_description:
+            node_task_type = node.metadata.get("task_type", "")
+            if node_task_type and node_task_type in task_description:
                 proc = await self._reconstruct_procedure(node)
                 if proc and await self._is_active(proc.id):
                     return proc

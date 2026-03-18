@@ -114,6 +114,7 @@ class Episode:
     outcome: EpisodeOutcome
     correction: str | None = None
     task_type: str | None = None
+    input_data: dict[str, Any] | None = None
     id: str = field(default_factory=_uuid)
     timestamp: datetime = field(default_factory=_now)
     tags: list[str] = field(default_factory=list)

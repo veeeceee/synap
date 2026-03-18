@@ -59,6 +59,7 @@ class EpisodicMemory:
                 "role": "cue",
                 "task_type": episode.task_type or "",
                 "tags": episode.tags,
+                "input_data": episode.input_data,
             },
         )
         await self._graph.add_node(cue_node)
@@ -224,6 +225,7 @@ class EpisodicMemory:
             correction=outcome_node.metadata.get("correction"),
             task_type=cue_node.metadata.get("task_type") or None,
             timestamp=cue_node.created_at,
+            input_data=cue_node.metadata.get("input_data"),
             tags=cue_node.metadata.get("tags", []),
             tool_calls=tool_calls,
         )

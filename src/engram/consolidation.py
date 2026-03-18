@@ -73,8 +73,10 @@ class ConsolidationEngine:
                 candidate_nodes = [
                     node
                     for eid in pattern.episode_ids
-                    if (node := await self._graph.get_node(f"{eid}_cue")) is not None
+                    if (node := await self._graph.get_node(f"{eid}_content")) is not None
                 ]
+                if not candidate_nodes:
+                    continue
                 return ConsolidationEvent(
                     source_type=MemoryType.EPISODIC,
                     target_type=MemoryType.PROCEDURAL,
@@ -114,6 +116,12 @@ class ConsolidationEngine:
         events: list[ConsolidationEvent] = []
         seen_task_types: set[str] = set()
 
+        # Skip patterns already queued from event-driven consolidation
+        queued_patterns = {
+            (e.metadata.get("task_type"), e.metadata.get("pattern"))
+            for e in self._queue
+        }
+
         all_episodes = await self._episodic.all_episodes()
         for episode in all_episodes:
             if episode.task_type and episode.task_type not in seen_task_types:
@@ -123,6 +131,9 @@ class ConsolidationEngine:
                     min_occurrences=self._config.min_pattern_occurrences,
                 )
                 for pattern in patterns:
+                    pattern_key = (pattern.task_type, pattern.pattern_description)
+                    if pattern_key in queued_patterns:
+                        continue
                     candidate_nodes = [
                         node
                         for eid in pattern.episode_ids

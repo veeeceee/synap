@@ -107,7 +107,7 @@ class CognitiveMemory:
         # Session-scoped operational metrics (reset on restart — not memory)
         self._retrieval_attempts = 0
         self._retrieval_hits = 0
-        self._warnings_issued = 0
+        self._warned_calls = 0
         self._warnings_followed_by_success = 0
         self._last_call_had_warnings = False
 
@@ -130,7 +130,7 @@ class CognitiveMemory:
         self._retrieval_attempts += 1
 
         # 1. Procedural: match and build schema
-        procedure = await self._procedural.match(task_description)
+        procedure = await self._procedural.match(task_description, task_type=task_type)
         output_schema = None
         prompt_fragment = None
 
@@ -150,7 +150,11 @@ class CognitiveMemory:
         successful = [e for e in episodes if e.outcome == EpisodeOutcome.SUCCESS]
         if successful:
             few_shot = [
-                {"input": e.cue, "output": e.content} for e in successful[:2]
+                {
+                    "input": e.input_data if e.input_data else e.cue,
+                    "output": e.content,
+                }
+                for e in successful[:2]
             ]
 
         if procedure:
@@ -186,7 +190,7 @@ class CognitiveMemory:
 
         self._last_call_had_warnings = bool(warnings)
         if warnings:
-            self._warnings_issued += len(warnings)
+            self._warned_calls += 1
 
         # Estimate token usage
         estimated_tokens = self._estimate_tokens(
@@ -233,6 +237,7 @@ class CognitiveMemory:
             outcome=outcome,
             correction=correction,
             task_type=task_type,
+            input_data=input_data,
             tags=tags or [],
             tool_calls=tool_calls or [],
         )
@@ -321,10 +326,10 @@ class CognitiveMemory:
             else 0.0
         )
 
-        # Warning effectiveness
+        # Warning effectiveness (ratio of warned calls followed by success)
         warning_eff = (
-            self._warnings_followed_by_success / self._warnings_issued
-            if self._warnings_issued > 0
+            self._warnings_followed_by_success / self._warned_calls
+            if self._warned_calls > 0
             else 0.0
         )
 
