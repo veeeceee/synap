@@ -6,7 +6,7 @@
 
 Cognitive memory architecture for LLM agents.
 
-Engram manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Engram uses structurally selective retrieval (graph traversal, not similarity search) and output-side enforcement (procedures become output schemas, not instructions).
+Engram manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Engram uses structurally selective retrieval (similarity search finds entry points, then graph traversal returns connected subgraphs instead of flat ranked lists) and output-side enforcement (procedures become output schemas, not instructions).
 
 ## Installation
 
