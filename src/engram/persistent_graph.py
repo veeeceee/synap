@@ -23,6 +23,8 @@ def _node_to_dict(node: MemoryNode) -> dict[str, Any]:
         "created_at": node.created_at.isoformat(),
         "last_accessed": node.last_accessed.isoformat(),
         "metadata": node.metadata,
+        "valid_from": node.valid_from.isoformat() if node.valid_from else None,
+        "valid_until": node.valid_until.isoformat() if node.valid_until else None,
     }
 
 
@@ -37,6 +39,8 @@ def _dict_to_node(d: dict[str, Any]) -> MemoryNode:
         created_at=_parse_dt(d.get("created_at")),
         last_accessed=_parse_dt(d.get("last_accessed")),
         metadata=d.get("metadata") if isinstance(d.get("metadata"), dict) else {},
+        valid_from=_parse_dt_optional(d.get("valid_from")),
+        valid_until=_parse_dt_optional(d.get("valid_until")),
     )
 
 
@@ -70,6 +74,16 @@ def _parse_dt(val: Any) -> datetime:
     if isinstance(val, str):
         return datetime.fromisoformat(val)
     return datetime.now(timezone.utc)
+
+
+def _parse_dt_optional(val: Any) -> datetime | None:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        return datetime.fromisoformat(val)
+    return None
 
 
 class PersistentGraph:

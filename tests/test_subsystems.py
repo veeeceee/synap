@@ -5,7 +5,7 @@ from engram.graph import MemoryGraph
 from engram.procedural import ProceduralMemory
 from engram.semantic import SemanticMemory
 from engram.types import Episode, EpisodeOutcome, MemoryType, Procedure, ToolCall
-from tests.conftest import FakeEmbedder
+from tests.conftest import FakeEmbedder, FakeLLM
 
 
 # --- Semantic Memory ---
@@ -70,6 +70,110 @@ async def test_semantic_domain_absorb(graph: MemoryGraph, embedder: FakeEmbedder
 
     assert node_id is not None
     assert await graph.get_node(node_id) is not None
+
+
+async def test_semantic_contradiction_detection(graph: MemoryGraph, embedder: FakeEmbedder):
+    """Storing a contradicting fact supersedes the old one."""
+    llm = FakeLLM()
+    sem = SemanticMemory(graph=graph, embedding_provider=embedder, llm_provider=llm)
+
+    old_id = await sem.store("Patient takes metformin daily")
+    new_id = await sem.store("Patient discontinued metformin")
+
+    # Old node should have a supersedes edge pointing to it
+    assert await graph.has_incoming_edge(old_id, "supersedes")
+
+    # Old node should have valid_until set
+    old_node = await graph.get_node(old_id)
+    assert old_node.valid_until is not None
+
+    # New node should have valid_from set
+    new_node = await graph.get_node(new_id)
+    assert new_node.valid_from is not None
+
+
+async def test_semantic_search_excludes_superseded(graph: MemoryGraph, embedder: FakeEmbedder):
+    """Search results exclude superseded facts."""
+    llm = FakeLLM()
+    sem = SemanticMemory(graph=graph, embedding_provider=embedder, llm_provider=llm)
+
+    await sem.store("Patient takes metformin daily")
+    await sem.store("Patient discontinued metformin")
+
+    result = await sem.search("metformin")
+    # Only the current fact should appear
+    contents = [n.content for n in result.nodes]
+    assert "Patient discontinued metformin" in contents
+    assert "Patient takes metformin daily" not in contents
+
+
+async def test_semantic_coexisting_facts(graph: MemoryGraph, embedder: FakeEmbedder):
+    """Non-contradicting facts coexist without supersession."""
+    llm = FakeLLM()
+    sem = SemanticMemory(graph=graph, embedding_provider=embedder, llm_provider=llm)
+
+    id1 = await sem.store("Patient takes metformin daily")
+    id2 = await sem.store("Patient allergic to penicillin")
+
+    # Neither should be superseded
+    assert not await graph.has_incoming_edge(id1, "supersedes")
+    assert not await graph.has_incoming_edge(id2, "supersedes")
+
+
+async def test_semantic_store_skip_contradictions(graph: MemoryGraph, embedder: FakeEmbedder):
+    """check_contradictions=False skips detection (for bulk import)."""
+    llm = FakeLLM()
+    sem = SemanticMemory(graph=graph, embedding_provider=embedder, llm_provider=llm)
+
+    id1 = await sem.store("Patient takes metformin daily")
+    id2 = await sem.store(
+        "Patient discontinued metformin",
+        check_contradictions=False,
+    )
+
+    # No supersession because detection was skipped
+    assert not await graph.has_incoming_edge(id1, "supersedes")
+    # No LLM calls for contradiction check
+    contradiction_calls = [c for c in llm.calls if "SUPERSEDES or COEXISTS" in c]
+    assert len(contradiction_calls) == 0
+
+
+async def test_semantic_no_llm_skips_contradictions(graph: MemoryGraph, embedder: FakeEmbedder):
+    """Without an LLM provider, contradiction detection is silently skipped."""
+    sem = SemanticMemory(graph=graph, embedding_provider=embedder)  # no LLM
+
+    id1 = await sem.store("Patient takes metformin daily")
+    id2 = await sem.store("Patient discontinued metformin")
+
+    # No supersession because no LLM to detect it
+    assert not await graph.has_incoming_edge(id1, "supersedes")
+
+
+async def test_semantic_retrieve_filters_expired(graph: MemoryGraph, embedder: FakeEmbedder):
+    """Retrieve filters out nodes past their valid_until date."""
+    from datetime import datetime, timezone, timedelta
+    from engram.types import MemoryNode
+
+    sem = SemanticMemory(graph=graph, embedding_provider=embedder)
+
+    # Manually create an expired node
+    past = datetime.now(timezone.utc) - timedelta(days=30)
+    expired_node = MemoryNode(
+        content="Expired insurance coverage",
+        node_type=MemoryType.SEMANTIC,
+        embedding=await embedder.embed("Expired insurance coverage"),
+        valid_from=past - timedelta(days=365),
+        valid_until=past,
+    )
+    await graph.add_node(expired_node)
+
+    # Create a current node
+    await sem.store("Active insurance coverage", check_contradictions=False)
+
+    result = await sem.search("insurance coverage")
+    contents = [n.content for n in result.nodes]
+    assert "Active insurance coverage" in contents
+    assert "Expired insurance coverage" not in contents
 
 
 # --- Procedural Memory ---

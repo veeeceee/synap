@@ -48,6 +48,8 @@ class MemoryNode:
     utility_score: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
     embedding: list[float] | None = None
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
 
     def touch(self) -> None:
         """Record an access — updates recency and count."""
@@ -144,6 +146,8 @@ class DomainResult:
     relevance: float = 1.0
     source_id: str = field(default_factory=_uuid)
     metadata: dict[str, Any] = field(default_factory=dict)
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
 
 
 @dataclass
