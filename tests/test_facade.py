@@ -395,3 +395,78 @@ async def test_warning_effectiveness_per_call():
     report = await memory.evaluate()
     # 1 warned call, 1 success after warning → 1.0 effectiveness
     assert report.warning_effectiveness == 1.0
+
+
+async def test_process_conversation_extracts_facts_and_episode():
+    """process_conversation extracts facts into semantic memory and records an episode."""
+    memory = _make_memory()
+
+    episode_id = await memory.process_conversation(
+        messages=[
+            {"role": "user", "content": "Check prior auth for knee replacement"},
+            {"role": "assistant", "content": "Let me check Aetna's requirements."},
+            {"role": "assistant", "content": "Aetna requires step therapy first."},
+        ],
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="prior_auth",
+    )
+
+    assert episode_id is not None
+
+    # Episode was recorded
+    stats = await memory.stats()
+    assert stats.total_episodes == 1
+
+    # Facts were extracted into semantic memory
+    assert stats.semantic_nodes >= 1
+
+
+async def test_process_conversation_with_tool_calls():
+    """process_conversation parses tool calls from messages."""
+    memory = _make_memory()
+
+    episode_id = await memory.process_conversation(
+        messages=[
+            {"role": "user", "content": "Check coverage for knee replacement"},
+            {
+                "role": "assistant",
+                "content": "Checking...",
+                "tool_calls": [
+                    {
+                        "server": "insurance-payer",
+                        "tool_name": "check_coverage",
+                        "parameters": {"payer": "Aetna", "procedure": "knee_replacement"},
+                        "result_summary": "Requires step therapy",
+                        "success": True,
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Step therapy is required first."},
+        ],
+        outcome=EpisodeOutcome.SUCCESS,
+    )
+
+    # Episode was recorded with tool calls
+    episodes = await memory.episodic.all_episodes()
+    assert len(episodes) == 1
+    assert len(episodes[0].tool_calls) == 1
+    assert episodes[0].tool_calls[0].tool_name == "check_coverage"
+    assert episodes[0].tool_calls[0].parameters["payer"] == "Aetna"
+
+
+async def test_process_conversation_explicit_task_type_overrides():
+    """Explicit task_type takes priority over tool-based inference."""
+    memory = _make_memory()
+
+    await memory.process_conversation(
+        messages=[
+            {"role": "user", "content": "Something generic"},
+            {"role": "assistant", "content": "Done."},
+        ],
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="my_custom_type",
+    )
+
+    episodes = await memory.episodic.all_episodes()
+    assert len(episodes) == 1
+    assert episodes[0].task_type == "my_custom_type"

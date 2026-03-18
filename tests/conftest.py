@@ -40,6 +40,8 @@ class FakeLLM:
             return "Consolidated fact from multiple episodes."
         if "Propose ONE new check or reasoning field" in prompt:
             return '{"field_name": "verification_check", "field_type": "string", "field_description": "Verify all required data is present before proceeding", "insert_before": "determination"}'
+        if "extract" in prompt.lower() and "conversation" in prompt.lower():
+            return '{"facts": ["Aetna requires step therapy before lumbar fusion", "Patient completed 6 weeks of PT"], "summary": "Agent checked prior auth requirements and confirmed approval", "input_summary": "Check prior auth for knee replacement"}'
         if "SUPERSEDES or COEXISTS" in prompt:
             # If the prompt contains "discontinued" or "no longer", it's a supersession
             if "discontinued" in prompt.lower() or "no longer" in prompt.lower():

@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import json
+
+from engram._utils import safe_parse_json
 from engram.consolidation import ConsolidationEngine, ConsolidationConfig, ConsolidationResult
 from engram.episodic import EpisodicMemory
 from engram.graph import MemoryGraph
@@ -21,6 +24,22 @@ from engram.types import (
     PreparedContext,
     ToolCall,
 )
+
+
+_EXTRACT_PROMPT = """\
+Analyze this conversation and extract:
+1. Key facts worth remembering long-term (not ephemeral details)
+2. A summary of what the agent did and what happened
+
+Conversation:
+{conversation}
+
+Respond with JSON:
+{{
+  "facts": ["fact 1", "fact 2", ...],
+  "summary": "one-sentence summary of what happened",
+  "input_summary": "what the user asked for or what triggered this"
+}}"""
 
 
 @dataclass
@@ -255,6 +274,125 @@ class CognitiveMemory:
 
         return episode_id
 
+    async def process_conversation(
+        self,
+        messages: list[dict[str, Any]],
+        outcome: EpisodeOutcome,
+        task_type: str | None = None,
+        correction: str | None = None,
+        tags: list[str] | None = None,
+    ) -> str:
+        """Auto-extract facts and record an episode from a conversation.
+
+        Extracts reusable facts into semantic memory (with contradiction
+        detection) and records the conversation as an episodic experience.
+
+        Task type inference chain:
+        1. Explicit task_type parameter (highest priority)
+        2. Tool calls + params matched against registered procedures
+        3. Procedure matching on conversation text
+        4. None
+        """
+        # Parse tool calls from messages
+        tool_calls = _extract_tool_calls(messages)
+
+        # Infer task type if not provided
+        if task_type is None and tool_calls:
+            task_type = await self._infer_task_type_from_tools(tool_calls)
+        if task_type is None:
+            # Fall back to procedure matching on first user message
+            first_user = next(
+                (m["content"] for m in messages if m.get("role") == "user"),
+                None,
+            )
+            if first_user:
+                proc = await self._procedural.match(first_user)
+                if proc:
+                    task_type = proc.task_type
+
+        # Build conversation text for LLM extraction
+        conv_text = _format_conversation(messages)
+
+        # LLM extracts facts and summary
+        raw = await self._llm.generate(
+            _EXTRACT_PROMPT.format(conversation=conv_text[:8000])
+        )
+        parsed = safe_parse_json(raw)
+
+        # Store extracted facts in semantic memory
+        if parsed and parsed.get("facts"):
+            for fact in parsed["facts"]:
+                if fact and isinstance(fact, str) and len(fact.strip()) > 10:
+                    await self._domain.absorb(
+                        insights=[fact.strip()],
+                        source_episodes=[],
+                        metadata={"source": "auto_extraction", "task_type": task_type},
+                    )
+
+        # Build episode from extraction
+        summary = parsed.get("summary", conv_text[:500]) if parsed else conv_text[:500]
+        input_summary = parsed.get("input_summary", "") if parsed else ""
+        cue = input_summary or next(
+            (m["content"] for m in messages if m.get("role") == "user"),
+            summary,
+        )
+
+        # Collect assistant output
+        assistant_content = {
+            "response": " ".join(
+                m["content"] for m in messages
+                if m.get("role") == "assistant" and m.get("content")
+            )[:2000],
+        }
+        if parsed and parsed.get("summary"):
+            assistant_content["summary"] = parsed["summary"]
+
+        episode = Episode(
+            cue=cue[:1000],
+            content=assistant_content,
+            outcome=outcome,
+            correction=correction,
+            task_type=task_type,
+            input_data={"messages_count": len(messages)},
+            tags=tags or [],
+            tool_calls=tool_calls,
+        )
+
+        episode_id = await self._episodic.record(episode)
+
+        # Event-driven consolidation check
+        event = await self._consolidation.on_episode_recorded(episode)
+        if event:
+            self._consolidation.queue_event(event)
+
+        return episode_id
+
+    async def _infer_task_type_from_tools(
+        self, tool_calls: list[ToolCall]
+    ) -> str | None:
+        """Match tool call patterns against registered procedures."""
+        if not tool_calls:
+            return None
+
+        # Build a signature from tool server/name/param-keys
+        tool_sig = " ".join(
+            f"{tc.server}/{tc.tool_name}({','.join(sorted(tc.parameters.keys()))})"
+            for tc in tool_calls
+        )
+
+        # Try matching against registered procedures
+        proc = await self._procedural.match(tool_sig)
+        if proc:
+            return proc.task_type
+
+        # Try matching on just server/tool names
+        tool_desc = " ".join(f"{tc.server} {tc.tool_name}" for tc in tool_calls)
+        proc = await self._procedural.match(tool_desc)
+        if proc:
+            return proc.task_type
+
+        return None
+
     # --- Direct subsystem access ---
 
     @property
@@ -376,3 +514,36 @@ class CognitiveMemory:
         if prompt_fragment:
             total_chars += len(prompt_fragment)
         return total_chars // 4
+
+
+def _extract_tool_calls(messages: list[dict[str, Any]]) -> list[ToolCall]:
+    """Parse ToolCall objects from conversation messages."""
+    tool_calls = []
+    for msg in messages:
+        for tc in msg.get("tool_calls", []):
+            tool_calls.append(
+                ToolCall(
+                    query=tc.get("query", ""),
+                    server=tc.get("server", ""),
+                    tool_name=tc.get("tool_name", tc.get("name", "")),
+                    parameters=tc.get("parameters", tc.get("arguments", {})),
+                    result_summary=tc.get("result_summary", ""),
+                    success=tc.get("success", True),
+                )
+            )
+    return tool_calls
+
+
+def _format_conversation(messages: list[dict[str, Any]]) -> str:
+    """Format messages into a readable conversation string for LLM extraction."""
+    lines = []
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        if content:
+            lines.append(f"{role}: {content}")
+        for tc in msg.get("tool_calls", []):
+            name = tc.get("tool_name", tc.get("name", "tool"))
+            params = tc.get("parameters", tc.get("arguments", {}))
+            lines.append(f"  [tool call: {name}({json.dumps(params, default=str)[:200]})]")
+    return "\n".join(lines)
