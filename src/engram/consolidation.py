@@ -58,6 +58,7 @@ class ConsolidationEngine:
         self._llm = llm_provider
         self._config = config or ConsolidationConfig()
         self._queue: list[ConsolidationEvent] = []
+        self._processed_patterns: set[tuple[str | None, str | None]] = set()
 
     async def on_episode_recorded(self, episode: Episode) -> ConsolidationEvent | None:
         if episode.task_type is None:
@@ -116,8 +117,8 @@ class ConsolidationEngine:
         events: list[ConsolidationEvent] = []
         seen_task_types: set[str] = set()
 
-        # Skip patterns already queued from event-driven consolidation
-        queued_patterns = {
+        # Skip patterns already processed from event-driven consolidation
+        queued_patterns = self._processed_patterns | {
             (e.metadata.get("task_type"), e.metadata.get("pattern"))
             for e in self._queue
         }
@@ -181,6 +182,17 @@ class ConsolidationEngine:
             confidence=0.5,
             metadata={"query": query},
         )
+
+    def snapshot_queued_patterns(self) -> None:
+        """Capture current queue patterns before draining."""
+        self._processed_patterns = {
+            (e.metadata.get("task_type"), e.metadata.get("pattern"))
+            for e in self._queue
+        }
+
+    def clear_pattern_snapshot(self) -> None:
+        """Clear the snapshot after consolidation is complete."""
+        self._processed_patterns.clear()
 
     def queue_event(self, event: ConsolidationEvent) -> None:
         if len(self._queue) < self._config.max_queue_size:

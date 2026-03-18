@@ -318,3 +318,80 @@ async def test_corrective_hints_in_schema():
     # evidence does NOT have prerequisites, so no hint
     evidence_desc = ctx.output_schema["properties"]["evidence"].get("description", "")
     assert "WARNING" not in evidence_desc
+
+
+async def test_explicit_task_type_matches_procedure():
+    """prepare_call uses explicit task_type even when description doesn't match."""
+    memory = _make_memory()
+
+    await memory.procedural.register(
+        Procedure(
+            task_type="prior_auth",
+            description="Determine prior authorization",
+            schema={"determination": {"type": "string"}},
+            field_ordering=["evidence", "determination"],
+            prerequisite_fields={"determination": ["evidence"]},
+        )
+    )
+
+    # Description doesn't contain "prior_auth" — only task_type does
+    ctx = await memory.prepare_call(
+        task_description="Check patient labs for surgery clearance",
+        task_type="prior_auth",
+    )
+
+    assert ctx.procedure is not None
+    assert ctx.procedure.task_type == "prior_auth"
+
+
+async def test_input_data_survives_reconstruction():
+    """input_data persists through record → cache clear → recall."""
+    memory = _make_memory()
+
+    await memory.record_outcome(
+        task_description="Diagnose webhook error",
+        input_data={"error_code": 500, "endpoint": "/webhooks/stripe"},
+        output={"diagnosis": "null ref"},
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="diagnose_bug",
+    )
+
+    # Clear session cache to force graph reconstruction
+    memory.episodic._episodes.clear()
+
+    recalled = await memory.episodic.recall("webhook error")
+    assert len(recalled) == 1
+    assert recalled[0].input_data == {"error_code": 500, "endpoint": "/webhooks/stripe"}
+
+
+async def test_warning_effectiveness_per_call():
+    """Warning effectiveness counts warned calls, not warning strings."""
+    memory = _make_memory()
+
+    # Record a failure to generate warnings on next prepare_call
+    await memory.record_outcome(
+        task_description="payment webhook error",
+        input_data={},
+        output={"result": "wrong"},
+        outcome=EpisodeOutcome.FAILURE,
+        task_type="diagnose_bug",
+    )
+
+    # This prepare_call should produce warnings (from the failure above)
+    ctx = await memory.prepare_call(
+        task_description="payment webhook error",
+    )
+    assert len(ctx.warnings) >= 1
+
+    # Record a success after being warned
+    await memory.record_outcome(
+        task_description="payment webhook error",
+        input_data={},
+        output={"result": "correct"},
+        outcome=EpisodeOutcome.SUCCESS,
+        task_type="diagnose_bug",
+    )
+
+    report = await memory.evaluate()
+    # 1 warned call, 1 success after warning → 1.0 effectiveness
+    assert report.warning_effectiveness == 1.0

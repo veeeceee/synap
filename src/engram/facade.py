@@ -277,12 +277,15 @@ class CognitiveMemory:
 
     async def consolidate(self) -> list[ConsolidationResult]:
         """Run consolidation: process queued events + periodic pass."""
+        # Snapshot queued patterns BEFORE draining so periodic can skip them
+        self._consolidation.snapshot_queued_patterns()
         results = await self._consolidation.process_queue()
         periodic_events = await self._consolidation.run_periodic()
         for event in periodic_events:
             result = await self._consolidation.process(event)
             if result:
                 results.append(result)
+        self._consolidation.clear_pattern_snapshot()
         return results
 
     async def stats(self) -> MemoryStats:
