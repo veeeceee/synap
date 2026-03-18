@@ -8,6 +8,15 @@ Cognitive memory architecture for LLM agents.
 
 Engram manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Engram uses structurally selective retrieval (similarity search finds entry points, then graph traversal returns connected subgraphs instead of flat ranked lists) and output-side enforcement (procedures become output schemas, not instructions).
 
+## How is this different?
+
+Most agent memory systems (Mem0, Letta, Zep, LangMem) treat memory as a retrieval problem — store text, find similar text, put it in the prompt. Engram takes a different position:
+
+- **Structural enforcement, not instructions.** Procedural memory produces output schemas where field ordering *is* the reasoning procedure. The model must generate evidence before conclusions — enforced by the schema, not by telling it to "think step by step."
+- **Graph traversal, not flat retrieval.** Semantic memory returns connected subgraphs where relationships are explicit. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges, not just the top-K similar chunks.
+- **Self-amending procedures.** When the same failure pattern repeats, the consolidation engine generates a new schema field and registers an amended procedure version. The system structurally prevents the mistake from recurring.
+- **Precision over convenience.** Engram is a library, not a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit and auditable.
+
 ## Installation
 
 ```bash
