@@ -63,6 +63,44 @@ class StorageBackend(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
+class AsyncStorageBackend(Protocol):
+    """Async persistent storage for the memory graph.
+
+    For network-backed databases (Postgres, Neo4j) where async I/O matters.
+    PersistentGraph calls methods directly without asyncio.to_thread.
+    """
+
+    async def save_node(self, node: dict[str, Any]) -> None: ...
+    async def save_edge(self, edge: dict[str, Any]) -> None: ...
+    async def load_node(self, node_id: str) -> dict[str, Any] | None: ...
+    async def load_edges(
+        self, node_id: str, edge_type: str | None = None
+    ) -> list[dict[str, Any]]: ...
+    async def query_nodes(
+        self,
+        node_type: str | None = None,
+        filters: dict[str, Any] | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]: ...
+    async def delete_node(self, node_id: str) -> None: ...
+    async def delete_edge(self, edge_id: str) -> None: ...
+    async def node_count(self, node_type: str | None = None) -> int: ...
+    async def edge_count(self, relation_type: str | None = None) -> int: ...
+    async def similarity_search(
+        self,
+        embedding: list[float],
+        node_type: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]: ...
+    async def traverse(
+        self,
+        start_id: str,
+        edge_types: list[str] | None = None,
+        max_depth: int = 2,
+        max_nodes: int = 50,
+    ) -> list[dict[str, Any]]: ...
+
+
 class SemanticDomain(Protocol):
     """Domain-specific semantic knowledge adapter.
 

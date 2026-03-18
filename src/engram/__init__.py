@@ -15,6 +15,7 @@ from engram.types import (
     ToolCall,
 )
 from engram.protocols import (
+    AsyncStorageBackend,
     EmbeddingProvider,
     GraphStore,
     LLMProvider,
@@ -33,6 +34,7 @@ from engram.bootstrap import Bootstrap, ProposedKnowledge
 from engram.facade import CognitiveMemory, EvaluationReport, MemoryStats
 
 __all__ = [
+    "AsyncStorageBackend",
     "Bootstrap",
     "CapacityHints",
     "CognitiveMemory",

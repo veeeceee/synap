@@ -165,11 +165,29 @@ memory = CognitiveMemory(
 )
 ```
 
-| Backend | Graph traversal | Vector search | Persistence |
-|---|---|---|---|
-| In-memory (default) | Python BFS | Python cosine | None |
-| `KuzuBackend` | Native Cypher | Native `array_cosine_similarity` | File-based |
-| `SQLiteBackend` | Python BFS | Python cosine | File-based |
+For multi-process deployments (web servers, worker pools), use the Postgres backend:
+
+```bash
+pip install engram[postgres]
+```
+
+```python
+import asyncpg
+from engram.backends.postgres import PostgresBackend
+from engram.persistent_graph import PersistentGraph
+
+pool = await asyncpg.create_pool("postgresql://localhost:5432/mydb")
+backend = PostgresBackend(pool, embedding_dim=768)
+await backend.init()  # Creates tables (idempotent)
+graph = PersistentGraph(backend=backend)
+```
+
+| Backend | Graph traversal | Vector search | Persistence | Concurrency |
+|---|---|---|---|---|
+| In-memory (default) | Python BFS | Python cosine | None | Single process |
+| `KuzuBackend` | Native Cypher | Native `array_cosine_similarity` | File-based | Single process |
+| `SQLiteBackend` | Python BFS | Python cosine | File-based | Single process |
+| `PostgresBackend` | Recursive CTE | pgvector `<=>` | Server-based | Multi-process safe |
 
 ## Documentation
 

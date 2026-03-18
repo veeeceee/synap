@@ -1,13 +1,14 @@
-"""PersistentGraph — async storage-backed graph wrapping sync backends."""
+"""PersistentGraph — async storage-backed graph for sync and async backends."""
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import math
 from datetime import datetime, timezone
 from typing import Any
 
-from engram.protocols import StorageBackend
+from engram.protocols import AsyncStorageBackend, StorageBackend
 from engram.types import MemoryEdge, MemoryNode, MemoryType
 
 
@@ -72,42 +73,50 @@ def _parse_dt(val: Any) -> datetime:
 
 
 class PersistentGraph:
-    """Async storage-backed graph wrapping a sync StorageBackend.
+    """Async storage-backed graph for both sync and async backends.
 
-    Backend calls are dispatched via asyncio.to_thread to avoid
-    blocking the event loop. Dict↔dataclass conversion happens
-    at the boundary.
+    Sync backends (Kuzu, SQLite) are dispatched via asyncio.to_thread.
+    Async backends (Postgres) are called directly.
     """
 
     def __init__(
         self,
-        backend: StorageBackend,
+        backend: StorageBackend | AsyncStorageBackend,
         utility_decay_rate: float = 0.01,
     ) -> None:
         self._backend = backend
         self._utility_decay_rate = utility_decay_rate
+        self._async = inspect.iscoroutinefunction(
+            getattr(backend, "save_node", None)
+        )
+
+    async def _call(self, method: Any, *args: Any, **kwargs: Any) -> Any:
+        """Dispatch to backend: await if async, to_thread if sync."""
+        if self._async:
+            return await method(*args, **kwargs)
+        return await asyncio.to_thread(method, *args, **kwargs)
 
     @property
-    def backend(self) -> StorageBackend:
+    def backend(self) -> StorageBackend | AsyncStorageBackend:
         return self._backend
 
     # --- Node operations ---
 
     async def add_node(self, node: MemoryNode) -> str:
-        await asyncio.to_thread(self._backend.save_node, _node_to_dict(node))
+        await self._call(self._backend.save_node, _node_to_dict(node))
         return node.id
 
     async def get_node(self, node_id: str) -> MemoryNode | None:
-        d = await asyncio.to_thread(self._backend.load_node, node_id)
+        d = await self._call(self._backend.load_node, node_id)
         if d is None:
             return None
         return _dict_to_node(d)
 
     async def remove_node(self, node_id: str) -> None:
-        await asyncio.to_thread(self._backend.delete_node, node_id)
+        await self._call(self._backend.delete_node, node_id)
 
     async def node_count(self, node_type: MemoryType | None = None) -> int:
-        return await asyncio.to_thread(
+        return await self._call(
             self._backend.node_count,
             node_type.value if node_type else None,
         )
@@ -115,23 +124,20 @@ class PersistentGraph:
     # --- Edge operations ---
 
     async def add_edge(self, edge: MemoryEdge) -> str:
-        src = await asyncio.to_thread(self._backend.load_node, edge.source_id)
+        src = await self._call(self._backend.load_node, edge.source_id)
         if src is None:
             raise KeyError(f"Source node {edge.source_id} not in graph")
-        tgt = await asyncio.to_thread(self._backend.load_node, edge.target_id)
+        tgt = await self._call(self._backend.load_node, edge.target_id)
         if tgt is None:
             raise KeyError(f"Target node {edge.target_id} not in graph")
-        await asyncio.to_thread(self._backend.save_edge, _edge_to_dict(edge))
+        await self._call(self._backend.save_edge, _edge_to_dict(edge))
         return edge.id
 
     async def remove_edge(self, edge_id: str) -> None:
-        await asyncio.to_thread(self._backend.delete_edge, edge_id)
+        await self._call(self._backend.delete_edge, edge_id)
 
     async def edge_count(self, relation_type: str | None = None) -> int:
-        return await asyncio.to_thread(
-            self._backend.edge_count,
-            relation_type,
-        )
+        return await self._call(self._backend.edge_count, relation_type)
 
     # --- Traversal ---
 
@@ -141,9 +147,7 @@ class PersistentGraph:
         edge_type: str | None = None,
         direction: str = "outgoing",
     ) -> list[MemoryNode]:
-        edges = await asyncio.to_thread(
-            self._backend.load_edges, node_id, edge_type
-        )
+        edges = await self._call(self._backend.load_edges, node_id, edge_type)
         results = []
         for e in edges:
             if direction == "outgoing" and e["source_id"] != node_id:
@@ -153,7 +157,7 @@ class PersistentGraph:
             neighbor_id = (
                 e["target_id"] if e["source_id"] == node_id else e["source_id"]
             )
-            d = await asyncio.to_thread(self._backend.load_node, neighbor_id)
+            d = await self._call(self._backend.load_node, neighbor_id)
             if d:
                 results.append(_dict_to_node(d))
         return results
@@ -165,12 +169,8 @@ class PersistentGraph:
         max_depth: int = 2,
         max_nodes: int = 50,
     ) -> list[MemoryNode]:
-        results = await asyncio.to_thread(
-            self._backend.traverse,
-            start,
-            edge_types,
-            max_depth,
-            max_nodes,
+        results = await self._call(
+            self._backend.traverse, start, edge_types, max_depth, max_nodes,
         )
         return [_dict_to_node(d) for d in results]
 
@@ -182,7 +182,7 @@ class PersistentGraph:
         filters: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> list[MemoryNode]:
-        results = await asyncio.to_thread(
+        results = await self._call(
             self._backend.query_nodes,
             node_type.value if node_type else None,
             filters,
@@ -193,7 +193,7 @@ class PersistentGraph:
     # --- Utility & lifecycle ---
 
     async def update_utility(self, node_id: str) -> None:
-        d = await asyncio.to_thread(self._backend.load_node, node_id)
+        d = await self._call(self._backend.load_node, node_id)
         if d is None:
             return
         node = _dict_to_node(d)
@@ -206,11 +206,11 @@ class PersistentGraph:
         decay = math.pow(1 - self._utility_decay_rate, hours)
         frequency_bonus = min(1.0, node.access_count / 20)
         node.utility_score = decay + frequency_bonus
-        await asyncio.to_thread(self._backend.save_node, _node_to_dict(node))
+        await self._call(self._backend.save_node, _node_to_dict(node))
 
     async def decay_all(self) -> None:
         now = datetime.now(timezone.utc)
-        all_nodes = await asyncio.to_thread(
+        all_nodes = await self._call(
             self._backend.query_nodes, None, None, 100_000
         )
         for d in all_nodes:
@@ -220,10 +220,10 @@ class PersistentGraph:
             decay = math.pow(1 - self._utility_decay_rate, hours)
             frequency_bonus = min(1.0, node.access_count / 20)
             node.utility_score = decay + frequency_bonus
-            await asyncio.to_thread(self._backend.save_node, _node_to_dict(node))
+            await self._call(self._backend.save_node, _node_to_dict(node))
 
     async def evict(self, threshold: float = 0.1) -> list[str]:
-        all_nodes = await asyncio.to_thread(
+        all_nodes = await self._call(
             self._backend.query_nodes, None, None, 100_000
         )
         to_evict = []
@@ -231,7 +231,7 @@ class PersistentGraph:
             if d.get("utility_score", 1.0) < threshold:
                 to_evict.append(d["id"])
         for nid in to_evict:
-            await asyncio.to_thread(self._backend.delete_node, nid)
+            await self._call(self._backend.delete_node, nid)
         return to_evict
 
     # --- Edges between specific nodes ---
@@ -242,7 +242,7 @@ class PersistentGraph:
         target_id: str,
         relation_type: str | None = None,
     ) -> list[MemoryEdge]:
-        edges = await asyncio.to_thread(self._backend.load_edges, source_id)
+        edges = await self._call(self._backend.load_edges, source_id)
         results = []
         for e in edges:
             if e["source_id"] != source_id or e["target_id"] != target_id:
@@ -253,7 +253,7 @@ class PersistentGraph:
         return results
 
     async def has_incoming_edge(self, node_id: str, relation_type: str) -> bool:
-        edges = await asyncio.to_thread(self._backend.load_edges, node_id)
+        edges = await self._call(self._backend.load_edges, node_id)
         for e in edges:
             if e["target_id"] == node_id and e["relation_type"] == relation_type:
                 return True
@@ -265,7 +265,7 @@ class PersistentGraph:
         node_type: MemoryType | None = None,
         limit: int = 10,
     ) -> list[MemoryNode]:
-        results = await asyncio.to_thread(
+        results = await self._call(
             self._backend.similarity_search,
             embedding,
             node_type.value if node_type else None,
