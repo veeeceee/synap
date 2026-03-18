@@ -3,12 +3,12 @@
 import json
 from typing import Any
 
-from engram._utils import safe_parse_json
-from engram.bootstrap import Bootstrap, ProposedKnowledge, ProposedNode, ProposedEdge
-from engram.episodic import EpisodicMemory
-from engram.graph import MemoryGraph
-from engram.semantic import SemanticMemory
-from engram.types import EpisodeOutcome, MemoryType
+from synap._utils import safe_parse_json
+from synap.bootstrap import Bootstrap, ProposedKnowledge, ProposedNode, ProposedEdge
+from synap.episodic import EpisodicMemory
+from synap.graph import MemoryGraph
+from synap.semantic import SemanticMemory
+from synap.types import EpisodeOutcome, MemoryType
 from tests.conftest import FakeEmbedder
 
 

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "engram-memory"
+name = "synap"
 version = "0.1.0"
 description = "Cognitive memory architecture for LLM agents"
 readme = "README.md"
@@ -24,10 +24,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/veeeceee/engram"
-Repository = "https://github.com/veeeceee/engram"
-Issues = "https://github.com/veeeceee/engram/issues"
-Changelog = "https://github.com/veeeceee/engram/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/veeeceee/synap"
+Repository = "https://github.com/veeeceee/synap"
+Issues = "https://github.com/veeeceee/synap/issues"
+Changelog = "https://github.com/veeeceee/synap/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 kuzu = ["kuzu>=0.8.0"]
@@ -40,7 +40,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/engram"]
+packages = ["src/synap"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

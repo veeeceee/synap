@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from engram.graph import MemoryGraph
-from engram.protocols import EmbeddingProvider, LLMProvider
+from synap.graph import MemoryGraph
+from synap.protocols import EmbeddingProvider, LLMProvider
 
 
 class FakeEmbedder:

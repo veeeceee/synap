@@ -7,8 +7,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from engram._utils import cosine_similarity
-from engram.types import MemoryEdge, MemoryNode, MemoryType
+from synap._utils import cosine_similarity
+from synap.types import MemoryEdge, MemoryNode, MemoryType
 
 
 class MemoryGraph:

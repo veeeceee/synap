@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from engram.backends.kuzu import KuzuBackend
+from synap.backends.kuzu import KuzuBackend
 
 
 @pytest.fixture

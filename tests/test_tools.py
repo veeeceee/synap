@@ -1,10 +1,10 @@
 """Tests for the agent-callable memory tools module."""
 
-from engram.facade import CognitiveMemory
-from engram.graph import MemoryGraph
-from engram.semantic import SemanticMemory
-from engram.tools import memory_tools
-from engram.types import EpisodeOutcome, MemoryType, Procedure
+from synap.facade import CognitiveMemory
+from synap.graph import MemoryGraph
+from synap.semantic import SemanticMemory
+from synap.tools import memory_tools
+from synap.types import EpisodeOutcome, MemoryType, Procedure
 from tests.conftest import FakeEmbedder, FakeLLM
 
 

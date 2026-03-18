@@ -2,12 +2,12 @@
 
 ## Healthcare — Prior Authorization Agent
 
-A prior auth agent must follow regulatory procedures exactly. Skipping steps (like checking step therapy requirements) leads to incorrect determinations that cause downstream problems. Engram enforces the reasoning chain structurally.
+A prior auth agent must follow regulatory procedures exactly. Skipping steps (like checking step therapy requirements) leads to incorrect determinations that cause downstream problems. Synap enforces the reasoning chain structurally.
 
 ```python
-from engram import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome, SemanticMemory
-from engram.backends.kuzu import KuzuBackend
-from engram.persistent_graph import PersistentGraph
+from synap import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome, SemanticMemory
+from synap.backends.kuzu import KuzuBackend
+from synap.persistent_graph import PersistentGraph
 
 # Persistent backend — payer knowledge and episode history survive restarts
 backend = KuzuBackend("./prior_auth_memory", embedding_dim=768)
@@ -101,12 +101,12 @@ await memory.record_outcome(
 A coding agent that learns from past debugging experiences. Each diagnosis becomes an episode; repeated patterns consolidate into knowledge.
 
 ```python
-from engram import (
+from synap import (
     CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome,
     SemanticMemory, MemoryGraph, ToolCall,
 )
-from engram.bootstrap import Bootstrap
-from engram.episodic import EpisodicMemory
+from synap.bootstrap import Bootstrap
+from synap.episodic import EpisodicMemory
 
 graph = MemoryGraph()
 domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)
@@ -215,9 +215,9 @@ await memory.record_outcome(
 A pipeline agent that investigates data quality alerts. Semantic memory holds schema knowledge; episodes track past investigations.
 
 ```python
-from engram import CognitiveMemory, CapacityHints, EpisodeOutcome, SemanticMemory, MemoryGraph
-from engram.bootstrap import Bootstrap
-from engram.episodic import EpisodicMemory
+from synap import CognitiveMemory, CapacityHints, EpisodeOutcome, SemanticMemory, MemoryGraph
+from synap.bootstrap import Bootstrap
+from synap.episodic import EpisodicMemory
 
 graph = MemoryGraph()
 domain = SemanticMemory(graph=graph, embedding_provider=your_embedder)

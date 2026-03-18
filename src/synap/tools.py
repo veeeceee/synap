@@ -5,7 +5,7 @@ Procedural: read + suggest amendments (queued, not direct)
 Episodic: read + append observations (no delete, no modify)
 
 Usage:
-    from engram.tools import memory_tools
+    from synap.tools import memory_tools
     tools = memory_tools(cognitive_memory)
     # Returns list of {"name": str, "schema": dict, "handler": async_fn}
 """
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from engram.facade import CognitiveMemory
-from engram.types import EpisodeOutcome, MemoryEdge, MemoryNode, MemoryType
+from synap.facade import CognitiveMemory
+from synap.types import EpisodeOutcome, MemoryEdge, MemoryNode, MemoryType
 
 
 def memory_tools(memory: CognitiveMemory) -> list[dict[str, Any]]:

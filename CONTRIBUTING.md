@@ -1,13 +1,13 @@
-# Contributing to Engram
+# Contributing to Synap
 
-Thanks for your interest in contributing to Engram! This guide will help you get started.
+Thanks for your interest in contributing to Synap! This guide will help you get started.
 
 ## Development Setup
 
 ```bash
 # Clone the repo
-git clone https://github.com/veeeceee/engram.git
-cd engram
+git clone https://github.com/veeeceee/synap.git
+cd synap
 
 # Create a virtual environment and install dev dependencies
 python -m venv .venv

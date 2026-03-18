@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from engram._utils import cosine_similarity
+from synap._utils import cosine_similarity
 
 
 class SQLiteBackend:

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from engram.backends.kuzu import KuzuBackend
-from engram.persistent_graph import PersistentGraph
-from engram.types import MemoryEdge, MemoryNode, MemoryType
+from synap.backends.kuzu import KuzuBackend
+from synap.persistent_graph import PersistentGraph
+from synap.types import MemoryEdge, MemoryNode, MemoryType
 
 
 @pytest.fixture
@@ -176,9 +176,9 @@ async def test_update_utility(pgraph: PersistentGraph):
 async def test_facade_with_kuzu_backend(tmp_path: Path):
     """Full integration: CognitiveMemory with Kùzu backend."""
     from tests.conftest import FakeEmbedder, FakeLLM
-    from engram.facade import CognitiveMemory
-    from engram.semantic import SemanticMemory
-    from engram.types import EpisodeOutcome, Procedure
+    from synap.facade import CognitiveMemory
+    from synap.semantic import SemanticMemory
+    from synap.types import EpisodeOutcome, Procedure
 
     backend = KuzuBackend(tmp_path / "facade_test", embedding_dim=8)
     embedder = FakeEmbedder()

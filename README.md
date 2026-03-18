@@ -1,37 +1,37 @@
-# Engram
+# Synap
 
-[![CI](https://github.com/veeeceee/engram/actions/workflows/ci.yml/badge.svg)](https://github.com/veeeceee/engram/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/engram-memory)](https://pypi.org/project/engram-memory/)
+[![CI](https://github.com/veeeceee/synap/actions/workflows/ci.yml/badge.svg)](https://github.com/veeeceee/synap/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/synap)](https://pypi.org/project/synap/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Cognitive memory architecture for LLM agents.
 
-Engram manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Engram uses structurally selective retrieval (similarity search finds entry points, then graph traversal returns connected subgraphs instead of flat ranked lists) and output-side enforcement (procedures become output schemas, not instructions).
+Synap manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Synap uses structurally selective retrieval (similarity search finds entry points, then graph traversal returns connected subgraphs instead of flat ranked lists) and output-side enforcement (procedures become output schemas, not instructions).
 
 ## How is this different?
 
-Most agent memory systems (Mem0, Letta, Zep, LangMem) treat memory as a retrieval problem — store text, find similar text, put it in the prompt. Engram takes a different position:
+Most agent memory systems (Mem0, Letta, Zep, LangMem) treat memory as a retrieval problem — store text, find similar text, put it in the prompt. Synap takes a different position:
 
 - **Structural enforcement, not instructions.** Procedural memory produces output schemas where field ordering *is* the reasoning procedure. The model must generate evidence before conclusions — enforced by the schema, not by telling it to "think step by step."
 - **Graph traversal, not flat retrieval.** Semantic memory returns connected subgraphs where relationships are explicit. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges, not just the top-K similar chunks.
 - **Self-amending procedures.** When the same failure pattern repeats, the consolidation engine generates a new schema field and registers an amended procedure version. The system structurally prevents the mistake from recurring.
-- **Precision over convenience.** Engram is a library, not a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit and auditable.
+- **Precision over convenience.** Synap is a library, not a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit and auditable.
 
 ## Installation
 
 ```bash
-pip install engram-memory
+pip install synap
 
 # With Kùzu for persistent graph storage (recommended)
-pip install engram-memory[kuzu]
+pip install synap[kuzu]
 
 # With uv
-uv add engram-memory --extra kuzu
+uv add synap --extra kuzu
 ```
 
 ## Providers
 
-Engram needs two providers you implement — one for embeddings, one for LLM text generation. Here's a minimal example using OpenAI:
+Synap needs two providers you implement — one for embeddings, one for LLM text generation. Here's a minimal example using OpenAI:
 
 ```python
 import openai
@@ -68,7 +68,7 @@ Any class matching the `EmbeddingProvider` and `LLMProvider` protocols works —
 ## Quick Start
 
 ```python
-from engram import (
+from synap import (
     CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome,
     SemanticMemory, MemoryGraph,
 )
@@ -111,7 +111,7 @@ ctx = await memory.prepare_call(
 # ctx.warnings → "Last time you misdiagnosed a similar TypeError..."
 
 # Record what happened (including tool calls if any)
-from engram import ToolCall
+from synap import ToolCall
 
 await memory.record_outcome(
     task_description="Diagnose TypeError in payment webhook handler",
@@ -134,11 +134,11 @@ await memory.record_outcome(
 
 ## Domain Adapters
 
-Engram's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools.
+Synap's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools.
 
 ```python
-from engram.protocols import SemanticDomain
-from engram.types import DomainResult, MemoryNode
+from synap.protocols import SemanticDomain
+from synap.types import DomainResult, MemoryNode
 
 class MyDomain:
     """Implements SemanticDomain — retrieves and absorbs domain knowledge."""
@@ -159,8 +159,8 @@ class MyDomain:
 By default, the graph lives in memory. Pass a storage backend for persistence:
 
 ```python
-from engram.backends.kuzu import KuzuBackend
-from engram.persistent_graph import PersistentGraph
+from synap.backends.kuzu import KuzuBackend
+from synap.persistent_graph import PersistentGraph
 
 backend = KuzuBackend("./agent_memory", embedding_dim=768)
 graph = PersistentGraph(backend=backend)
@@ -177,13 +177,13 @@ memory = CognitiveMemory(
 For multi-process deployments (web servers, worker pools), use the Postgres backend:
 
 ```bash
-pip install engram-memory[postgres]
+pip install synap[postgres]
 ```
 
 ```python
 import asyncpg
-from engram.backends.postgres import PostgresBackend
-from engram.persistent_graph import PersistentGraph
+from synap.backends.postgres import PostgresBackend
+from synap.persistent_graph import PersistentGraph
 
 pool = await asyncpg.create_pool("postgresql://localhost:5432/mydb")
 backend = PostgresBackend(pool, embedding_dim=768)
@@ -217,7 +217,7 @@ All three operate on a shared typed property graph. Edges cross partitions — t
 
 ## Async-First
 
-All public APIs are async. Engram is designed for integration with async frameworks (FastAPI, Sanic, etc.):
+All public APIs are async. Synap is designed for integration with async frameworks (FastAPI, Sanic, etc.):
 
 ```python
 # All operations are awaitable

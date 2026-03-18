@@ -8,7 +8,7 @@ LLM agents treat memory as a retrieval problem: find relevant things, stuff them
 
 2. **Retrieval is input-side only.** RAG optimizes what goes *into* the prompt but can't shape what comes *out*. Pattern matching in the weights overrides instructions in the context because weight activations are cheap while sustained attention on distant tokens is expensive.
 
-Engram resolves this by making memory **structurally selective** (graph traversal returns specific nodes, not text blobs) and enforcing procedures on the **output side** (schemas force reasoning order, not instructions).
+Synap resolves this by making memory **structurally selective** (graph traversal returns specific nodes, not text blobs) and enforcing procedures on the **output side** (schemas force reasoning order, not instructions).
 
 ## Three Memory Subsystems
 
@@ -16,7 +16,7 @@ Engram resolves this by making memory **structurally selective** (graph traversa
 
 Domain knowledge, pluggable via the `SemanticDomain` protocol.
 
-Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools. Engram doesn't prescribe the shape of domain knowledge. Instead, it defines a protocol with two methods:
+Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools. Synap doesn't prescribe the shape of domain knowledge. Instead, it defines a protocol with two methods:
 
 - **`retrieve(task_description, ...)`** — return domain knowledge relevant to a task
 - **`absorb(insights, source_episodes, ...)`** — store consolidated insights in your domain's schema
@@ -165,11 +165,11 @@ This ensures all subsystems share the same graph instance.
 | `SQLiteBackend` | Python BFS | Python cosine | File-based | `sqlite3` (stdlib) |
 | `PostgresBackend` | Recursive CTE | pgvector `<=>` cosine distance | Server-based | `asyncpg` |
 
-Kùzu is the recommended persistent backend — embedded (no server), native graph traversal via Cypher, and native vector similarity. Install with `pip install engram-memory[kuzu]`.
+Kùzu is the recommended persistent backend — embedded (no server), native graph traversal via Cypher, and native vector similarity. Install with `pip install synap[kuzu]`.
 
 ```python
-from engram.backends.kuzu import KuzuBackend
-from engram.persistent_graph import PersistentGraph
+from synap.backends.kuzu import KuzuBackend
+from synap.persistent_graph import PersistentGraph
 
 # In-memory (default)
 graph = MemoryGraph()
@@ -185,7 +185,7 @@ memory = CognitiveMemory(domain=domain, embedding_provider=embedder, llm_provide
 
 ## Provider Model
 
-Engram is a library, not a framework. It doesn't own the agent loop, call the LLM for you, or manage conversation history. You provide two required dependencies:
+Synap is a library, not a framework. It doesn't own the agent loop, call the LLM for you, or manage conversation history. You provide two required dependencies:
 
 - **`EmbeddingProvider`** — embeds text for entry-point matching in the graph
 - **`LLMProvider`** — generates text for consolidation and bootstrapping (never for retrieval)
@@ -205,7 +205,7 @@ The library prepares context (`prepare_call`) and records outcomes (`record_outc
 
 ## Domain Adapters
 
-The `SemanticDomain` protocol decouples engram from any particular knowledge representation:
+The `SemanticDomain` protocol decouples synap from any particular knowledge representation:
 
 ```python
 class SemanticDomain(Protocol):

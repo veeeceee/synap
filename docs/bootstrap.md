@@ -1,6 +1,6 @@
 # Bootstrap Guide
 
-Engram needs some initial data to be useful. Without it, semantic retrieval returns nothing, no procedures exist, and the system can't enforce reasoning order. The bootstrap system solves this cold start problem.
+Synap needs some initial data to be useful. Without it, semantic retrieval returns nothing, no procedures exist, and the system can't enforce reasoning order. The bootstrap system solves this cold start problem.
 
 ## Principle: Assisted, Not Autonomous
 
@@ -11,10 +11,10 @@ The LLM drafts structured memory from unstructured input. You review and accept.
 Bootstrap is constructed separately from `CognitiveMemory`. It operates on `SemanticMemory` and `EpisodicMemory` directly:
 
 ```python
-from engram.bootstrap import Bootstrap
-from engram.graph import MemoryGraph
-from engram.semantic import SemanticMemory
-from engram.episodic import EpisodicMemory
+from synap.bootstrap import Bootstrap
+from synap.graph import MemoryGraph
+from synap.semantic import SemanticMemory
+from synap.episodic import EpisodicMemory
 
 graph = MemoryGraph()
 embedder = your_embedder
@@ -170,12 +170,12 @@ Recommended sequence:
 ## Full Example
 
 ```python
-from engram import CognitiveMemory, CapacityHints
-from engram.bootstrap import Bootstrap
-from engram.backends.kuzu import KuzuBackend
-from engram.persistent_graph import PersistentGraph
-from engram.semantic import SemanticMemory
-from engram.episodic import EpisodicMemory
+from synap import CognitiveMemory, CapacityHints
+from synap.bootstrap import Bootstrap
+from synap.backends.kuzu import KuzuBackend
+from synap.persistent_graph import PersistentGraph
+from synap.semantic import SemanticMemory
+from synap.episodic import EpisodicMemory
 
 # Use a persistent backend so bootstrap data survives restarts
 backend = KuzuBackend("./agent_memory", embedding_dim=768)

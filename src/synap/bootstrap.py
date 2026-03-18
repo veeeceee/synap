@@ -6,11 +6,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from engram._utils import safe_parse_json
-from engram.episodic import EpisodicMemory
-from engram.protocols import EmbeddingProvider, LLMProvider
-from engram.semantic import SemanticMemory
-from engram.types import (
+from synap._utils import safe_parse_json
+from synap.episodic import EpisodicMemory
+from synap.protocols import EmbeddingProvider, LLMProvider
+from synap.semantic import SemanticMemory
+from synap.types import (
     Episode,
     EpisodeOutcome,
     Procedure,

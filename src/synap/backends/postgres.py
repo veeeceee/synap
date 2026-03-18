@@ -65,7 +65,7 @@ class PostgresBackend:
         self,
         pool: asyncpg.Pool,
         embedding_dim: int = 1536,
-        table_prefix: str = "engram_",
+        table_prefix: str = "synap_",
     ) -> None:
         self._pool = pool
         self._dim = embedding_dim

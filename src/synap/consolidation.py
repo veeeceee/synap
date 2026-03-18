@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 import json
 
-from engram._utils import safe_parse_json
-from engram.protocols import GraphStore, LLMProvider, SemanticDomain
-from engram.types import (
+from synap._utils import safe_parse_json
+from synap.protocols import GraphStore, LLMProvider, SemanticDomain
+from synap.types import (
     ConsolidationEvent,
     ConsolidationTrigger,
     Episode,
@@ -20,8 +20,8 @@ from engram.types import (
 )
 
 if TYPE_CHECKING:
-    from engram.episodic import EpisodicMemory
-    from engram.procedural import ProceduralMemory
+    from synap.episodic import EpisodicMemory
+    from synap.procedural import ProceduralMemory
 
 
 @dataclass

@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Engram, please report it through GitHub's private vulnerability reporting:
+If you discover a security vulnerability in Synap, please report it through GitHub's private vulnerability reporting:
 
 1. Go to the [Security tab](../../security) of this repository
 2. Click **Report a vulnerability**
@@ -18,4 +18,4 @@ Please do **not** open a public issue for security vulnerabilities.
 
 ## Scope
 
-This policy covers the `engram` library code. Issues in dependencies (kuzu, asyncpg, etc.) should be reported to their respective maintainers.
+This policy covers the `synap` library code. Issues in dependencies (kuzu, asyncpg, etc.) should be reported to their respective maintainers.

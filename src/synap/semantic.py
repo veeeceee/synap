@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider
-from engram.types import CapacityHints, DomainResult, MemoryEdge, MemoryNode, MemoryType
+from synap.protocols import EmbeddingProvider, GraphStore, LLMProvider
+from synap.types import CapacityHints, DomainResult, MemoryEdge, MemoryNode, MemoryType
 
 
 _CONTRADICTION_PROMPT = """\

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from engram.types import DomainResult, MemoryEdge, MemoryNode, MemoryType
+    from synap.types import DomainResult, MemoryEdge, MemoryNode, MemoryType
 
 
 class EmbeddingProvider(Protocol):
@@ -105,7 +105,7 @@ class SemanticDomain(Protocol):
     """Domain-specific semantic knowledge adapter.
 
     The consuming project implements this to define how domain knowledge
-    is stored and retrieved. engram handles lifecycle (when to retrieve,
+    is stored and retrieved. synap handles lifecycle (when to retrieve,
     when to consolidate); the domain handles shape (what types exist,
     how to query them).
     """

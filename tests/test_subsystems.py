@@ -1,10 +1,10 @@
 """Tests for the three memory subsystems."""
 
-from engram.episodic import EpisodicMemory
-from engram.graph import MemoryGraph
-from engram.procedural import ProceduralMemory
-from engram.semantic import SemanticMemory
-from engram.types import Episode, EpisodeOutcome, MemoryType, Procedure, ToolCall
+from synap.episodic import EpisodicMemory
+from synap.graph import MemoryGraph
+from synap.procedural import ProceduralMemory
+from synap.semantic import SemanticMemory
+from synap.types import Episode, EpisodeOutcome, MemoryType, Procedure, ToolCall
 from tests.conftest import FakeEmbedder, FakeLLM
 
 
@@ -57,7 +57,7 @@ async def test_semantic_domain_retrieve(graph: MemoryGraph, embedder: FakeEmbedd
 
 async def test_semantic_domain_absorb(graph: MemoryGraph, embedder: FakeEmbedder):
     """SemanticMemory implements SemanticDomain.absorb."""
-    from engram.types import MemoryNode
+    from synap.types import MemoryNode
 
     sem = SemanticMemory(graph=graph, embedding_provider=embedder)
     episode = MemoryNode(content="test episode", node_type=MemoryType.EPISODIC)
@@ -152,7 +152,7 @@ async def test_semantic_no_llm_skips_contradictions(graph: MemoryGraph, embedder
 async def test_semantic_retrieve_filters_expired(graph: MemoryGraph, embedder: FakeEmbedder):
     """Retrieve filters out nodes past their valid_until date."""
     from datetime import datetime, timezone, timedelta
-    from engram.types import MemoryNode
+    from synap.types import MemoryNode
 
     sem = SemanticMemory(graph=graph, embedding_provider=embedder)
 

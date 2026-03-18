@@ -7,14 +7,14 @@ from typing import Any
 
 import json
 
-from engram._utils import safe_parse_json
-from engram.consolidation import ConsolidationEngine, ConsolidationConfig, ConsolidationResult
-from engram.episodic import EpisodicMemory
-from engram.graph import MemoryGraph
-from engram.persistent_graph import PersistentGraph
-from engram.procedural import ProceduralMemory
-from engram.protocols import EmbeddingProvider, GraphStore, LLMProvider, SemanticDomain, StorageBackend
-from engram.types import (
+from synap._utils import safe_parse_json
+from synap.consolidation import ConsolidationEngine, ConsolidationConfig, ConsolidationResult
+from synap.episodic import EpisodicMemory
+from synap.graph import MemoryGraph
+from synap.persistent_graph import PersistentGraph
+from synap.procedural import ProceduralMemory
+from synap.protocols import EmbeddingProvider, GraphStore, LLMProvider, SemanticDomain, StorageBackend
+from synap.types import (
     CapacityHints,
     ConsolidationEvent,
     DomainResult,
@@ -66,7 +66,7 @@ class EvaluationReport:
 
 
 class CognitiveMemory:
-    """Main entry point for the engram memory library.
+    """Main entry point for the synap memory library.
 
     Consumers use this to store experiences, retrieve context, and
     get output schemas for LLM calls. The library prepares context

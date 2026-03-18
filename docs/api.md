@@ -1,13 +1,13 @@
 # API Reference
 
-All public APIs are async. Engram is designed for integration with async frameworks (FastAPI, Sanic, etc.).
+All public APIs are async. Synap is designed for integration with async frameworks (FastAPI, Sanic, etc.).
 
 ## CognitiveMemory
 
 The main entry point. Wraps all three subsystems and provides high-level operations.
 
 ```python
-from engram import CognitiveMemory, CapacityHints, SemanticMemory, MemoryGraph
+from synap import CognitiveMemory, CapacityHints, SemanticMemory, MemoryGraph
 
 graph = MemoryGraph()
 domain = SemanticMemory(graph=graph, embedding_provider=embedder)
@@ -27,8 +27,8 @@ memory = CognitiveMemory(
 If neither `graph` nor `backend` is provided, an in-memory `MemoryGraph` is created internally. When using persistence, create a `PersistentGraph` explicitly and pass it as `graph=`:
 
 ```python
-from engram.backends.kuzu import KuzuBackend
-from engram.persistent_graph import PersistentGraph
+from synap.backends.kuzu import KuzuBackend
+from synap.persistent_graph import PersistentGraph
 
 backend = KuzuBackend("./agent_memory", embedding_dim=768)
 graph = PersistentGraph(backend=backend)
@@ -137,7 +137,7 @@ memory.graph        # GraphStore (MemoryGraph or PersistentGraph)
 The pluggable interface for domain-specific knowledge.
 
 ```python
-from engram.protocols import SemanticDomain
+from synap.protocols import SemanticDomain
 
 class MyDomain:
     """Implements SemanticDomain."""
@@ -167,7 +167,7 @@ Returned by `retrieve`. A piece of domain knowledge serialized for the LLM.
 | `content` | `str` | Text content for the prompt |
 | `relevance` | `float` | Relevance score (for ranking) |
 | `source_id` | `str` | ID for cross-referencing |
-| `metadata` | `dict` | Opaque to engram — domain-specific data |
+| `metadata` | `dict` | Opaque to synap — domain-specific data |
 
 ---
 
@@ -236,7 +236,7 @@ SemanticDomain protocol method. Stores consolidated insights as a new semantic n
 Register a procedure for a task type. If a procedure already exists for this task type, it's superseded.
 
 ```python
-from engram import Procedure
+from synap import Procedure
 
 await memory.procedural.register(Procedure(
     task_type="diagnose_bug",
@@ -273,7 +273,7 @@ List registered procedures. Active-only excludes superseded versions.
 Record a new episode as a subgraph (cue → content → outcome nodes).
 
 ```python
-from engram import Episode, EpisodeOutcome
+from synap import Episode, EpisodeOutcome
 
 await memory.episodic.record(Episode(
     cue="TypeError in stripe webhook handler",

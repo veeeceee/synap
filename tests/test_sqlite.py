@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from engram.backends.sqlite import SQLiteBackend
+from synap.backends.sqlite import SQLiteBackend
 
 
 @pytest.fixture

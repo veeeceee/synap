@@ -2,15 +2,15 @@
 
 Usage:
     # stdio (Claude Desktop, Cursor, etc.)
-    python -m engram.mcp_server
+    python -m synap.mcp_server
 
     # HTTP
-    python -m engram.mcp_server http
+    python -m synap.mcp_server http
 
     # With custom database path
-    ENGRAM_DB=./my_memory python -m engram.mcp_server
+    ENGRAM_DB=./my_memory python -m synap.mcp_server
 
-Requires: pip install engram-memory[kuzu] fastmcp
+Requires: pip install synap[kuzu] fastmcp
 """
 
 from __future__ import annotations
@@ -34,16 +34,16 @@ async def _get_memory():
     if _memory is not None:
         return _memory
 
-    from engram.graph import MemoryGraph
-    from engram.semantic import SemanticMemory
-    from engram.facade import CognitiveMemory
+    from synap.graph import MemoryGraph
+    from synap.semantic import SemanticMemory
+    from synap.facade import CognitiveMemory
 
     db_path = os.environ.get("ENGRAM_DB")
     embedding_dim = int(os.environ.get("ENGRAM_EMBEDDING_DIM", "8"))
 
     if db_path:
-        from engram.backends.kuzu import KuzuBackend
-        from engram.persistent_graph import PersistentGraph
+        from synap.backends.kuzu import KuzuBackend
+        from synap.persistent_graph import PersistentGraph
 
         backend = KuzuBackend(db_path, embedding_dim=embedding_dim)
         graph = PersistentGraph(backend=backend)
@@ -150,7 +150,7 @@ async def record_observation(
     or delete past records.
     </usecase>
     """
-    from engram.types import EpisodeOutcome
+    from synap.types import EpisodeOutcome
 
     memory = await _get_memory()
     episode_id = await memory.record_outcome(
@@ -180,7 +180,7 @@ async def suggest_amendment(
     evidence supports it. Cannot directly modify procedures.
     </usecase>
     """
-    from engram.types import MemoryNode, MemoryType
+    from synap.types import MemoryNode, MemoryType
 
     memory = await _get_memory()
     node = MemoryNode(

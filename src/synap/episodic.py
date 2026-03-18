@@ -6,9 +6,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from engram._utils import cosine_similarity
-from engram.protocols import EmbeddingProvider, GraphStore
-from engram.types import (
+from synap._utils import cosine_similarity
+from synap.protocols import EmbeddingProvider, GraphStore
+from synap.types import (
     CapacityHints,
     Episode,
     EpisodeOutcome,

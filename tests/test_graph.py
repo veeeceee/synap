@@ -1,7 +1,7 @@
 """Tests for MemoryGraph — the core data structure."""
 
-from engram.graph import MemoryGraph
-from engram.types import MemoryEdge, MemoryNode, MemoryType
+from synap.graph import MemoryGraph
+from synap.types import MemoryEdge, MemoryNode, MemoryType
 
 
 async def test_add_and_get_node(graph: MemoryGraph):

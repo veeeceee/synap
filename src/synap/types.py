@@ -1,4 +1,4 @@
-"""Core types for the engram memory system."""
+"""Core types for the synap memory system."""
 
 from __future__ import annotations
 

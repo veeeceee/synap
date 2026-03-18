@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from engram.protocols import EmbeddingProvider, GraphStore
-from engram.types import MemoryEdge, MemoryNode, MemoryType, Procedure
+from synap.protocols import EmbeddingProvider, GraphStore
+from synap.types import MemoryEdge, MemoryNode, MemoryType, Procedure
 
 
 class ProceduralMemory:

@@ -8,8 +8,8 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
-from engram.protocols import AsyncStorageBackend, StorageBackend
-from engram.types import MemoryEdge, MemoryNode, MemoryType
+from synap.protocols import AsyncStorageBackend, StorageBackend
+from synap.types import MemoryEdge, MemoryNode, MemoryType
 
 
 def _node_to_dict(node: MemoryNode) -> dict[str, Any]:

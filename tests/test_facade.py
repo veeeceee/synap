@@ -2,10 +2,10 @@
 
 import pytest
 
-from engram.facade import CognitiveMemory
-from engram.graph import MemoryGraph
-from engram.semantic import SemanticMemory
-from engram.types import (
+from synap.facade import CognitiveMemory
+from synap.graph import MemoryGraph
+from synap.semantic import SemanticMemory
+from synap.types import (
     CapacityHints,
     EpisodeOutcome,
     MemoryType,
