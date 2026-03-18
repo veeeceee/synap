@@ -143,6 +143,39 @@ async def test_procedural_versioning(graph: MemoryGraph, embedder: FakeEmbedder)
     assert matched.id == v2.id
 
 
+async def test_procedural_match_reconstructs_from_graph(
+    graph: MemoryGraph, embedder: FakeEmbedder
+):
+    """Match reconstructs procedures from graph after session cache is cleared."""
+    proc = ProceduralMemory(graph=graph, embedding_provider=embedder)
+
+    procedure = Procedure(
+        task_type="diagnose_bug",
+        description="Diagnose a bug from error logs",
+        schema={
+            "error_classification": {"type": "string"},
+            "root_cause": {"type": "string"},
+            "fix_proposal": {"type": "string"},
+        },
+        field_ordering=["error_classification", "root_cause", "fix_proposal"],
+        prerequisite_fields={"fix_proposal": ["error_classification", "root_cause"]},
+        system_prompt_fragment="Analyze systematically.",
+    )
+    await proc.register(procedure)
+
+    # Clear session cache — simulates process restart
+    proc._procedures.clear()
+    proc._task_type_index.clear()
+
+    matched = await proc.match("Diagnose a bug in the webhook handler")
+    assert matched is not None
+    assert matched.task_type == "diagnose_bug"
+    assert matched.field_ordering == ["error_classification", "root_cause", "fix_proposal"]
+    assert matched.prerequisite_fields == {"fix_proposal": ["error_classification", "root_cause"]}
+    assert matched.system_prompt_fragment == "Analyze systematically."
+    assert matched.schema == procedure.schema
+
+
 # --- Episodic Memory ---
 
 

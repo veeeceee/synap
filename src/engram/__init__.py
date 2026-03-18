@@ -26,7 +26,9 @@ from engram.persistent_graph import PersistentGraph
 from engram.semantic import SemanticMemory
 from engram.procedural import ProceduralMemory
 from engram.episodic import EpisodicMemory
-from engram.consolidation import ConsolidationConfig
+from engram.consolidation import ConsolidationConfig, ConsolidationResult
+from engram.episodic import EpisodicPattern
+from engram.semantic import SemanticResult
 from engram.bootstrap import Bootstrap, ProposedKnowledge
 from engram.facade import CognitiveMemory, EvaluationReport, MemoryStats
 
@@ -36,12 +38,14 @@ __all__ = [
     "CognitiveMemory",
     "ConsolidationConfig",
     "ConsolidationEvent",
+    "ConsolidationResult",
     "ConsolidationTrigger",
     "DomainResult",
     "Episode",
     "EpisodeOutcome",
-    "EmbeddingProvider",
     "EpisodicMemory",
+    "EpisodicPattern",
+    "EmbeddingProvider",
     "EvaluationReport",
     "GraphStore",
     "LLMProvider",
@@ -57,6 +61,7 @@ __all__ = [
     "ProposedKnowledge",
     "SemanticDomain",
     "SemanticMemory",
+    "SemanticResult",
     "StorageBackend",
     "ToolCall",
 ]

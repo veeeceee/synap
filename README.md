@@ -20,6 +20,42 @@ pip install engram[kuzu]
 uv add engram --extra kuzu
 ```
 
+## Providers
+
+Engram needs two providers you implement — one for embeddings, one for LLM text generation. Here's a minimal example using OpenAI:
+
+```python
+import openai
+
+class OpenAIEmbedder:
+    def __init__(self, client: openai.AsyncOpenAI, model: str = "text-embedding-3-small"):
+        self.client = client
+        self.model = model
+
+    async def embed(self, text: str) -> list[float]:
+        response = await self.client.embeddings.create(input=text, model=self.model)
+        return response.data[0].embedding
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        response = await self.client.embeddings.create(input=texts, model=self.model)
+        return [item.embedding for item in response.data]
+
+
+class OpenAILLM:
+    def __init__(self, client: openai.AsyncOpenAI, model: str = "gpt-4o"):
+        self.client = client
+        self.model = model
+
+    async def generate(self, prompt: str, output_schema: dict | None = None) -> str:
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content
+```
+
+Any class matching the `EmbeddingProvider` and `LLMProvider` protocols works — no inheritance required. See [docs/architecture.md](docs/architecture.md#provider-model) for details.
+
 ## Quick Start
 
 ```python

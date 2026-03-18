@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from engram.consolidation import ConsolidationEngine, ConsolidationConfig
+from engram.consolidation import ConsolidationEngine, ConsolidationConfig, ConsolidationResult
 from engram.episodic import EpisodicMemory
 from engram.graph import MemoryGraph
 from engram.persistent_graph import PersistentGraph
@@ -96,11 +96,12 @@ class CognitiveMemory:
             config=consolidation_config or ConsolidationConfig(),
         )
 
-        # Tracking for evaluation
+        # Session-scoped operational metrics (reset on restart — not memory)
         self._retrieval_attempts = 0
         self._retrieval_hits = 0
         self._warnings_issued = 0
         self._warnings_followed_by_success = 0
+        self._last_call_had_warnings = False
 
     # --- High-level operations ---
 
@@ -175,6 +176,7 @@ class CognitiveMemory:
         if has_context:
             self._retrieval_hits += 1
 
+        self._last_call_had_warnings = bool(warnings)
         if warnings:
             self._warnings_issued += len(warnings)
 
@@ -229,8 +231,8 @@ class CognitiveMemory:
 
         episode_id = await self._episodic.record(episode)
 
-        # Track warning effectiveness
-        if outcome == EpisodeOutcome.SUCCESS and self._warnings_issued > 0:
+        # Track warning effectiveness (per-call, not cumulative)
+        if outcome == EpisodeOutcome.SUCCESS and self._last_call_had_warnings:
             self._warnings_followed_by_success += 1
 
         # Event-driven consolidation check
@@ -260,7 +262,7 @@ class CognitiveMemory:
 
     # --- Lifecycle ---
 
-    async def consolidate(self) -> list[Any]:
+    async def consolidate(self) -> list[ConsolidationResult]:
         """Run consolidation: process queued events + periodic pass."""
         results = await self._consolidation.process_queue()
         periodic_events = await self._consolidation.run_periodic()
