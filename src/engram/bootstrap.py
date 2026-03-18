@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from engram._utils import safe_parse_json
 from engram.episodic import EpisodicMemory
 from engram.protocols import EmbeddingProvider, LLMProvider
 from engram.semantic import SemanticMemory
@@ -165,7 +166,7 @@ class Bootstrap:
                 },
             )
 
-            parsed = _safe_parse_json(raw)
+            parsed = safe_parse_json(raw)
             if parsed is None:
                 continue
 
@@ -221,7 +222,7 @@ class Bootstrap:
         )
 
         raw = await self._llm.generate(prompt)
-        parsed = _safe_parse_json(raw)
+        parsed = safe_parse_json(raw)
 
         if parsed is None:
             # Fallback: minimal procedure
@@ -313,37 +314,3 @@ class Bootstrap:
                     pass
 
         return node_ids
-
-
-def _safe_parse_json(text: str) -> dict[str, Any] | None:
-    """Parse JSON from LLM output, handling common formatting issues."""
-    text = text.strip()
-
-    # Try direct parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Try extracting JSON from markdown code block
-    if "```" in text:
-        start = text.find("```")
-        # Skip the ```json or ``` line
-        start = text.find("\n", start) + 1
-        end = text.find("```", start)
-        if end > start:
-            try:
-                return json.loads(text[start:end].strip())
-            except json.JSONDecodeError:
-                pass
-
-    # Try finding first { to last }
-    first_brace = text.find("{")
-    last_brace = text.rfind("}")
-    if first_brace >= 0 and last_brace > first_brace:
-        try:
-            return json.loads(text[first_brace : last_brace + 1])
-        except json.JSONDecodeError:
-            pass
-
-    return None

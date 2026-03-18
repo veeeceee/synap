@@ -1,5 +1,7 @@
 """Tests for CognitiveMemory facade — the integration layer."""
 
+import pytest
+
 from engram.facade import CognitiveMemory
 from engram.graph import MemoryGraph
 from engram.semantic import SemanticMemory
@@ -214,3 +216,105 @@ async def test_stats_reflect_graph_state():
     stats = await memory.stats()
     assert stats.semantic_nodes == 2
     assert stats.procedural_nodes == 1
+
+
+async def test_procedural_consolidation_creates_new_version():
+    """Repeated failures amend the procedure with a new schema field."""
+    llm = FakeLLM()
+    memory = _make_memory(llm_provider=llm)
+
+    # Register a procedure
+    await memory.procedural.register(
+        Procedure(
+            task_type="prior_auth",
+            description="Determine prior authorization",
+            schema={
+                "evidence": {"type": "string"},
+                "determination": {"type": "string"},
+            },
+            field_ordering=["evidence", "determination"],
+            prerequisite_fields={"determination": ["evidence"]},
+        )
+    )
+
+    # Record enough failures to trigger consolidation
+    for i in range(3):
+        await memory.record_outcome(
+            task_description=f"Auth failure case {i}",
+            input_data={},
+            output={"error": f"failed_{i}"},
+            outcome=EpisodeOutcome.FAILURE,
+            task_type="prior_auth",
+        )
+
+    # Process consolidation
+    results = await memory.consolidate()
+    assert len(results) >= 1
+
+    # The active procedure should now be the amended version
+    matched = await memory.procedural.match("prior_auth")
+    assert matched is not None
+    assert "verification_check" in matched.field_ordering
+    assert "verification_check" in matched.schema
+    # New field should be inserted before determination
+    assert matched.field_ordering.index("verification_check") < matched.field_ordering.index("determination")
+    # Determination should now require verification_check
+    assert "verification_check" in matched.prerequisite_fields.get("determination", [])
+
+
+async def test_split_graph_raises_error():
+    """CognitiveMemory rejects domain built on a different graph."""
+    graph_a = MemoryGraph()
+    graph_b = MemoryGraph()
+    embedder = FakeEmbedder()
+    domain = SemanticMemory(graph=graph_a, embedding_provider=embedder)
+
+    with pytest.raises(ValueError, match="same graph instance"):
+        CognitiveMemory(
+            domain=domain,
+            embedding_provider=embedder,
+            llm_provider=FakeLLM(),
+            graph=graph_b,
+        )
+
+
+async def test_corrective_hints_in_schema():
+    """Corrected episodes inject warnings into decision field descriptions."""
+    memory = _make_memory()
+
+    await memory.procedural.register(
+        Procedure(
+            task_type="diagnose_bug",
+            description="Diagnose a bug from error logs",
+            schema={
+                "evidence": {"type": "string"},
+                "root_cause": {"type": "string"},
+                "fix_proposal": {"type": "string", "description": "Proposed fix"},
+            },
+            field_ordering=["evidence", "root_cause", "fix_proposal"],
+            prerequisite_fields={"fix_proposal": ["evidence", "root_cause"]},
+        )
+    )
+
+    # Record a corrected episode
+    await memory.record_outcome(
+        task_description="Diagnose TypeError in webhook handler",
+        input_data={},
+        output={"fix_proposal": "wrong fix"},
+        outcome=EpisodeOutcome.CORRECTED,
+        correction="Should have checked null reference first",
+        task_type="diagnose_bug",
+    )
+
+    # Prepare a similar call — should get hints
+    ctx = await memory.prepare_call(
+        task_description="Diagnose TypeError in webhook handler",
+    )
+
+    assert ctx.output_schema is not None
+    # fix_proposal has prerequisites, so it should get the correction hint
+    fix_desc = ctx.output_schema["properties"]["fix_proposal"].get("description", "")
+    assert "Should have checked null reference first" in fix_desc
+    # evidence does NOT have prerequisites, so no hint
+    evidence_desc = ctx.output_schema["properties"]["evidence"].get("description", "")
+    assert "WARNING" not in evidence_desc

@@ -78,6 +78,14 @@ class CognitiveMemory:
         else:
             self._graph = MemoryGraph(utility_decay_rate=utility_decay_rate)
 
+        # Guard against split-graph misconfiguration
+        domain_graph = getattr(domain, "_graph", None)
+        if domain_graph is not None and domain_graph is not self._graph:
+            raise ValueError(
+                "domain and CognitiveMemory must share the same graph instance. "
+                "Pass the same graph object to both SemanticMemory and CognitiveMemory."
+            )
+
         self._domain = domain
         self._procedural = ProceduralMemory(
             graph=self._graph,

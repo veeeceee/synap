@@ -106,8 +106,8 @@ class ProceduralMemory:
             field_schema = procedure.schema.get(field_name, {"type": "string"})
             field_def = dict(field_schema)
 
-            if episode_context:
-                hints = self._corrective_hints(field_name, episode_context)
+            if episode_context and field_name in procedure.prerequisite_fields:
+                hints = self._corrective_hints(episode_context)
                 if hints:
                     existing_desc = field_def.get("description", "")
                     field_def["description"] = (
@@ -173,12 +173,12 @@ class ProceduralMemory:
     async def _is_active(self, procedure_id: str) -> bool:
         return not await self._graph.has_incoming_edge(procedure_id, "supersedes")
 
-    def _corrective_hints(
-        self, field_name: str, episodes: list[MemoryNode]
-    ) -> str:
+    def _corrective_hints(self, episodes: list[MemoryNode]) -> str:
+        """Extract correction text from failure/corrected outcome nodes."""
         hints = []
         for ep in episodes:
-            failures = ep.metadata.get("failures", {})
-            if field_name in failures:
-                hints.append(failures[field_name])
+            outcome = ep.metadata.get("outcome")
+            correction = ep.metadata.get("correction")
+            if outcome in ("failure", "corrected") and correction:
+                hints.append(correction)
         return "; ".join(hints) if hints else ""

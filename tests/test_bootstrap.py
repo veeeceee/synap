@@ -3,7 +3,8 @@
 import json
 from typing import Any
 
-from engram.bootstrap import Bootstrap, ProposedKnowledge, ProposedNode, ProposedEdge, _safe_parse_json
+from engram._utils import safe_parse_json
+from engram.bootstrap import Bootstrap, ProposedKnowledge, ProposedNode, ProposedEdge
 from engram.episodic import EpisodicMemory
 from engram.graph import MemoryGraph
 from engram.semantic import SemanticMemory
@@ -172,19 +173,19 @@ async def test_full_bootstrap_flow():
 # --- JSON parsing edge cases ---
 
 
-def test_safe_parse_json_direct():
-    assert _safe_parse_json('{"a": 1}') == {"a": 1}
+def testsafe_parse_json_direct():
+    assert safe_parse_json('{"a": 1}') == {"a": 1}
 
 
-def test_safe_parse_json_markdown_block():
+def testsafe_parse_json_markdown_block():
     text = '```json\n{"a": 1}\n```'
-    assert _safe_parse_json(text) == {"a": 1}
+    assert safe_parse_json(text) == {"a": 1}
 
 
-def test_safe_parse_json_with_preamble():
+def testsafe_parse_json_with_preamble():
     text = 'Here is the result:\n{"a": 1}'
-    assert _safe_parse_json(text) == {"a": 1}
+    assert safe_parse_json(text) == {"a": 1}
 
 
-def test_safe_parse_json_invalid():
-    assert _safe_parse_json("not json at all") is None
+def testsafe_parse_json_invalid():
+    assert safe_parse_json("not json at all") is None

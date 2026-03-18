@@ -23,7 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Procedural consolidation now actually amends procedures** — `_consolidate_to_procedural` generates a new schema field via LLM, registers a new Procedure version with `supersedes` edge, so `prepare_call()` returns the amended schema
+- **Corrective hints now work** — `_corrective_hints()` reads correction text from episode outcome nodes; hints are injected into schema descriptions of fields with prerequisites (decision fields)
 - `CognitiveMemory.evaluate()` now populates `cold_spots` (task types with ≤2 episodes) — previously always returned empty
+- Warning effectiveness tracking is now per-call, not cumulative across the session
+- **Split-graph guard** — `CognitiveMemory` raises `ValueError` if the domain adapter's graph differs from the graph passed to the constructor
+- Removed misleading `sqlite` optional dependency (`aiosqlite`) — `SQLiteBackend` uses stdlib `sqlite3`
 
 ### Added
 

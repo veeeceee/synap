@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import json
+
+from engram._utils import safe_parse_json
 from engram.protocols import GraphStore, LLMProvider, SemanticDomain
 from engram.types import (
     ConsolidationEvent,
@@ -13,6 +16,7 @@ from engram.types import (
     EpisodeOutcome,
     MemoryNode,
     MemoryType,
+    Procedure,
 )
 
 if TYPE_CHECKING:
@@ -247,26 +251,84 @@ class ConsolidationEngine:
         contents = [c.content for c in event.candidates]
         task_type = event.metadata.get("task_type", "unknown")
 
+        # Find the existing procedure to amend
+        existing = await self._procedural.match(task_type)
+        if existing is None:
+            # No procedure to amend — fall back to semantic storage
+            return await self._consolidate_to_semantic(event)
+
         prompt = (
-            f"These are repeated failure patterns for task type '{task_type}':\n\n"
+            f"The following procedure has a repeated failure pattern.\n\n"
+            f"Task type: {existing.task_type}\n"
+            f"Description: {existing.description}\n"
+            f"Current fields (in reasoning order): {existing.field_ordering}\n"
+            f"Current schema:\n{json.dumps(existing.schema, indent=2)}\n\n"
+            f"Failure pattern: {event.metadata.get('pattern', '')}\n\n"
+            f"Failure episodes:\n"
             + "\n---\n".join(contents)
-            + "\n\nWhat check or reasoning step should be added to prevent "
-            "this failure pattern? Respond with a single, specific instruction."
+            + "\n\nPropose ONE new check or reasoning field that would prevent "
+            "this failure. The field should enforce a verification step the model "
+            "is currently skipping.\n\n"
+            "Respond with JSON:\n"
+            '{"field_name": "snake_case_name", '
+            '"field_type": "string", '
+            '"field_description": "What the model must provide in this field", '
+            '"insert_before": "existing_field_name"}\n\n'
+            "The new field will be required before the model can fill in the "
+            "insert_before field."
         )
-        amendment = await self._llm.generate(prompt)
+        raw = await self._llm.generate(prompt)
+        amendment = safe_parse_json(raw)
 
-        meta = dict(event.metadata)
-        meta["amendment_for"] = task_type
+        if amendment is None or "field_name" not in amendment:
+            # LLM failed to produce valid structured amendment — fall back
+            return await self._consolidate_to_semantic(event)
 
-        domain_id = await self._domain.absorb(
-            insights=[f"Procedural amendment for {task_type}: {amendment.strip()}"],
-            source_episodes=event.candidates,
-            metadata=meta,
+        field_name = amendment["field_name"]
+        insert_before = amendment.get("insert_before")
+
+        # Build amended schema
+        new_schema = dict(existing.schema)
+        new_schema[field_name] = {
+            "type": amendment.get("field_type", "string"),
+            "description": amendment.get("field_description", ""),
+        }
+
+        # Build amended field ordering
+        new_ordering = list(existing.field_ordering)
+        if insert_before and insert_before in new_ordering:
+            idx = new_ordering.index(insert_before)
+            new_ordering.insert(idx, field_name)
+        else:
+            new_ordering.insert(max(0, len(new_ordering) - 1), field_name)
+
+        # Build amended prerequisites
+        new_prereqs = {k: list(v) for k, v in existing.prerequisite_fields.items()}
+        if insert_before and insert_before in new_prereqs:
+            new_prereqs[insert_before].append(field_name)
+        elif insert_before:
+            new_prereqs[insert_before] = [field_name]
+
+        # Register new procedure version (creates supersedes edge)
+        new_procedure = Procedure(
+            task_type=existing.task_type,
+            description=existing.description,
+            schema=new_schema,
+            field_ordering=new_ordering,
+            prerequisite_fields=new_prereqs,
+            system_prompt_fragment=existing.system_prompt_fragment,
+            metadata={
+                **existing.metadata,
+                "amendment_source": "consolidation",
+                "pattern": event.metadata.get("pattern", ""),
+            },
+            episode_ids=[c.metadata.get("episode_id", c.id) for c in event.candidates],
         )
+        proc_id = await self._procedural.register(new_procedure)
 
         return ConsolidationResult(
             event=event,
-            domain_id=domain_id,
+            domain_id=proc_id,
         )
 
     async def _merge_semantic(self, event: ConsolidationEvent) -> ConsolidationResult:

@@ -38,8 +38,8 @@ class FakeLLM:
         # Return a reasonable consolidation response
         if "Extract the key facts" in prompt:
             return "Consolidated fact from multiple episodes."
-        if "What check or reasoning step" in prompt:
-            return "Always verify input data before processing."
+        if "Propose ONE new check or reasoning field" in prompt:
+            return '{"field_name": "verification_check", "field_type": "string", "field_description": "Verify all required data is present before proceeding", "insert_before": "determination"}'
         if "Merge them into a single" in prompt:
             return "Merged semantic fact."
         return "LLM response."
