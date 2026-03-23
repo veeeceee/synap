@@ -52,9 +52,9 @@ class KuzuBackend:
     similarity via array_cosine_similarity, and file-based
     persistence with zero server infrastructure.
 
-    Modeled after the Synthesis/dialectical-workstation Kùzu
-    integration: MERGE-based upserts, parameterized queries,
-    idempotent schema creation.
+    Thread-safe: each operation creates its own connection from the
+    shared Database object. Kuzu databases are thread-safe but
+    connections are not.
     """
 
     def __init__(
@@ -66,16 +66,20 @@ class KuzuBackend:
         self._path = str(path)
         self._embedding_dim = embedding_dim
         self._db = kuzu.Database(self._path, buffer_pool_size=buffer_pool_mb * 1024 * 1024)
-        self._conn = kuzu.Connection(self._db)
         self._ensure_schema()
+
+    def _conn(self) -> kuzu.Connection:
+        """Create a fresh connection for the current operation."""
+        return kuzu.Connection(self._db)
 
     def _ensure_schema(self) -> None:
         """Idempotent schema creation."""
+        conn = self._conn()
         for stmt in _SCHEMA_SQL.format(dim=self._embedding_dim).split(";"):
             stmt = stmt.strip()
             if stmt:
                 try:
-                    self._conn.execute(stmt)
+                    conn.execute(stmt)
                 except RuntimeError:
                     pass  # Table already exists
 
@@ -86,7 +90,7 @@ class KuzuBackend:
         embedding = node.get("embedding")
         embedding_val = self._format_embedding(embedding) if embedding else None
 
-        self._conn.execute(
+        self._conn().execute(
             """
             MERGE (n:MemoryNode {id: $id})
             ON CREATE SET
@@ -121,7 +125,7 @@ class KuzuBackend:
         )
 
     def load_node(self, node_id: str) -> dict[str, Any] | None:
-        result = self._conn.execute(
+        result = self._conn().execute(
             """
             MATCH (n:MemoryNode {id: $id})
             RETURN n.id, n.node_type, n.content, n.embedding,
@@ -139,7 +143,7 @@ class KuzuBackend:
 
     def save_edge(self, edge: dict[str, Any]) -> None:
         """Create an edge between existing nodes."""
-        self._conn.execute(
+        self._conn().execute(
             """
             MATCH (s:MemoryNode {id: $source_id}), (t:MemoryNode {id: $target_id})
             CREATE (s)-[:MemoryEdge {
@@ -164,8 +168,9 @@ class KuzuBackend:
     def load_edges(
         self, node_id: str, edge_type: str | None = None
     ) -> list[dict[str, Any]]:
+        conn = self._conn()
         if edge_type:
-            result = self._conn.execute(
+            result = conn.execute(
                 """
                 MATCH (s:MemoryNode)-[e:MemoryEdge]->(t:MemoryNode)
                 WHERE (s.id = $id OR t.id = $id) AND e.relation_type = $etype
@@ -175,7 +180,7 @@ class KuzuBackend:
                 parameters={"id": node_id, "etype": edge_type},
             )
         else:
-            result = self._conn.execute(
+            result = conn.execute(
                 """
                 MATCH (s:MemoryNode)-[e:MemoryEdge]->(t:MemoryNode)
                 WHERE s.id = $id OR t.id = $id
@@ -194,8 +199,9 @@ class KuzuBackend:
         filters: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
+        conn = self._conn()
         if node_type:
-            result = self._conn.execute(
+            result = conn.execute(
                 """
                 MATCH (n:MemoryNode)
                 WHERE n.node_type = $ntype
@@ -208,7 +214,7 @@ class KuzuBackend:
                 parameters={"ntype": node_type, "lim": limit},
             )
         else:
-            result = self._conn.execute(
+            result = conn.execute(
                 """
                 MATCH (n:MemoryNode)
                 RETURN n.id, n.node_type, n.content, n.embedding,
@@ -236,22 +242,23 @@ class KuzuBackend:
     # --- Delete ---
 
     def delete_node(self, node_id: str) -> None:
+        conn = self._conn()
         # Delete connected edges first (Kùzu requires directed deletes)
-        self._conn.execute(
+        conn.execute(
             """
             MATCH (n:MemoryNode {id: $id})-[e:MemoryEdge]->()
             DELETE e
             """,
             parameters={"id": node_id},
         )
-        self._conn.execute(
+        conn.execute(
             """
             MATCH ()-[e:MemoryEdge]->(n:MemoryNode {id: $id})
             DELETE e
             """,
             parameters={"id": node_id},
         )
-        self._conn.execute(
+        conn.execute(
             """
             MATCH (n:MemoryNode {id: $id})
             DELETE n
@@ -260,7 +267,7 @@ class KuzuBackend:
         )
 
     def delete_edge(self, edge_id: str) -> None:
-        self._conn.execute(
+        self._conn().execute(
             """
             MATCH ()-[e:MemoryEdge {id: $id}]->()
             DELETE e
@@ -271,25 +278,27 @@ class KuzuBackend:
     # --- Counts ---
 
     def node_count(self, node_type: str | None = None) -> int:
+        conn = self._conn()
         if node_type:
-            result = self._conn.execute(
+            result = conn.execute(
                 "MATCH (n:MemoryNode) WHERE n.node_type = $ntype RETURN count(n)",
                 parameters={"ntype": node_type},
             )
         else:
-            result = self._conn.execute(
+            result = conn.execute(
                 "MATCH (n:MemoryNode) RETURN count(n)"
             )
         return result.get_next()[0] if result.has_next() else 0
 
     def edge_count(self, relation_type: str | None = None) -> int:
+        conn = self._conn()
         if relation_type:
-            result = self._conn.execute(
+            result = conn.execute(
                 "MATCH ()-[e:MemoryEdge]->() WHERE e.relation_type = $rtype RETURN count(e)",
                 parameters={"rtype": relation_type},
             )
         else:
-            result = self._conn.execute(
+            result = conn.execute(
                 "MATCH ()-[e:MemoryEdge]->() RETURN count(e)"
             )
         return result.get_next()[0] if result.has_next() else 0
@@ -304,9 +313,10 @@ class KuzuBackend:
     ) -> list[dict[str, Any]]:
         """Native cosine similarity via Kùzu's array_cosine_similarity."""
         cast_expr = f"cast($emb, 'DOUBLE[{self._embedding_dim}]')"
+        conn = self._conn()
 
         if node_type:
-            result = self._conn.execute(
+            result = conn.execute(
                 f"""
                 MATCH (n:MemoryNode)
                 WHERE n.node_type = $ntype AND n.embedding IS NOT NULL
@@ -324,7 +334,7 @@ class KuzuBackend:
                 },
             )
         else:
-            result = self._conn.execute(
+            result = conn.execute(
                 f"""
                 MATCH (n:MemoryNode)
                 WHERE n.embedding IS NOT NULL
@@ -371,9 +381,7 @@ class KuzuBackend:
             type_filter = ""
             params = {"start": start_id, "lim": max_nodes}
 
-        # Use recursive MATCH for BFS
-        # Kùzu supports variable-length relationships
-        result = self._conn.execute(
+        result = self._conn().execute(
             f"""
             MATCH (start:MemoryNode {{id: $start}})
             MATCH (start)-[e:MemoryEdge*1..{max_depth}]-(neighbor:MemoryNode)
@@ -434,5 +442,4 @@ class KuzuBackend:
 
     def close(self) -> None:
         # Kùzu handles cleanup on garbage collection
-        self._conn = None
         self._db = None
