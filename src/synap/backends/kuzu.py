@@ -367,25 +367,34 @@ class KuzuBackend:
 
         Returns nodes reachable within max_depth hops, optionally
         filtered by edge relation_type and minimum weight.
+
+        Kuzu recursive relationships bind as RECURSIVE_REL (path type),
+        so edge property filters use the inline predicate syntax:
+        ``[r:MemoryEdge*1..N (edge, _ | WHERE predicate)]``
         """
-        weight_filter = f"AND e.weight >= {min_weight}" if min_weight > 0 else ""
+        # Build inline edge predicate for recursive relationship
+        edge_predicates: list[str] = []
+        params: dict[str, Any] = {"start": start_id, "lim": max_nodes}
 
         if edge_types:
-            type_filter = "AND e.relation_type IN $etypes"
-            params = {
-                "start": start_id,
-                "etypes": edge_types,
-                "lim": max_nodes,
-            }
+            # Kuzu inline predicate can reference the single-hop edge variable
+            edge_predicates.append("edge.relation_type IN $etypes")
+            params["etypes"] = edge_types
+
+        if min_weight > 0:
+            edge_predicates.append(f"edge.weight >= {min_weight}")
+
+        if edge_predicates:
+            predicate_str = " AND ".join(edge_predicates)
+            rel_pattern = f"[r:MemoryEdge*1..{max_depth} (edge, _ | WHERE {predicate_str})]"
         else:
-            type_filter = ""
-            params = {"start": start_id, "lim": max_nodes}
+            rel_pattern = f"[:MemoryEdge*1..{max_depth}]"
 
         result = self._conn().execute(
             f"""
             MATCH (start:MemoryNode {{id: $start}})
-            MATCH (start)-[e:MemoryEdge*1..{max_depth}]-(neighbor:MemoryNode)
-            WHERE neighbor.id <> $start {type_filter} {weight_filter}
+            MATCH (start)-{rel_pattern}-(neighbor:MemoryNode)
+            WHERE neighbor.id <> $start
             WITH DISTINCT neighbor
             RETURN neighbor.id, neighbor.node_type, neighbor.content, neighbor.embedding,
                    neighbor.utility_score, neighbor.access_count,
