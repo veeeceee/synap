@@ -227,6 +227,7 @@ class PersistentGraph:
         all_nodes = await self._call(
             self._backend.query_nodes, None, None, 100_000
         )
+        updated = []
         for d in all_nodes:
             node = _dict_to_node(d)
             seconds = max(1.0, (now - node.last_accessed).total_seconds())
@@ -234,7 +235,14 @@ class PersistentGraph:
             decay = math.pow(1 - self._utility_decay_rate, hours)
             frequency_bonus = min(1.0, node.access_count / 20)
             node.utility_score = decay + frequency_bonus
-            await self._call(self._backend.save_node, _node_to_dict(node))
+            updated.append(_node_to_dict(node))
+
+        # Use batch save if available (single connection), fall back to per-node
+        if hasattr(self._backend, "save_nodes_batch"):
+            await self._call(self._backend.save_nodes_batch, updated)
+        else:
+            for d in updated:
+                await self._call(self._backend.save_node, d)
 
     async def evict(self, threshold: float = 0.1) -> list[str]:
         all_nodes = await self._call(

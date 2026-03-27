@@ -85,6 +85,48 @@ class KuzuBackend:
 
     # --- Node operations ---
 
+    def save_nodes_batch(self, nodes: list[dict[str, Any]]) -> None:
+        """Upsert multiple nodes using a single connection."""
+        if not nodes:
+            return
+        conn = self._conn()
+        for node in nodes:
+            embedding = node.get("embedding")
+            embedding_val = self._format_embedding(embedding) if embedding else None
+            conn.execute(
+                """
+                MERGE (n:MemoryNode {id: $id})
+                ON CREATE SET
+                    n.node_type = $node_type,
+                    n.content = $content,
+                    n.embedding = $embedding,
+                    n.utility_score = $utility_score,
+                    n.access_count = $access_count,
+                    n.created_at = $created_at,
+                    n.last_accessed = $last_accessed,
+                    n.metadata = $metadata
+                ON MATCH SET
+                    n.node_type = $node_type,
+                    n.content = $content,
+                    n.embedding = $embedding,
+                    n.utility_score = $utility_score,
+                    n.access_count = $access_count,
+                    n.last_accessed = $last_accessed,
+                    n.metadata = $metadata
+                """,
+                parameters={
+                    "id": node["id"],
+                    "node_type": node["node_type"],
+                    "content": node["content"],
+                    "embedding": embedding_val,
+                    "utility_score": float(node.get("utility_score", 1.0)),
+                    "access_count": int(node.get("access_count", 0)),
+                    "created_at": node.get("created_at", _now_iso()),
+                    "last_accessed": node.get("last_accessed", _now_iso()),
+                    "metadata": json.dumps(node.get("metadata", {})),
+                },
+            )
+
     def save_node(self, node: dict[str, Any]) -> None:
         """Upsert a node using MERGE."""
         embedding = node.get("embedding")
