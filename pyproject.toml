@@ -33,11 +33,16 @@ Changelog = "https://github.com/veeeceee/synap/blob/main/CHANGELOG.md"
 kuzu = ["kuzu>=0.8.0"]
 postgres = ["asyncpg>=0.30.0"]
 mcp = ["fastmcp>=2.0.0"]
+fastapi = ["fastapi>=0.115.0", "pydantic>=2.0", "uvicorn>=0.30.0"]
+sanic = ["sanic>=24.6.0", "pydantic>=2.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "kuzu>=0.8.0",
 ]
+
+[project.scripts]
+synap = "synap.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/synap"]
