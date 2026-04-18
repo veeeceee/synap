@@ -281,6 +281,57 @@ class KuzuBackend:
 
         return nodes
 
+    # --- Server-side decay & evict ---
+
+    def decay_all_scores(self, decay_rate: float, now_epoch_ms: int) -> None:
+        """Recompute utility_score for all nodes in a single Cypher SET.
+
+        Runs entirely server-side — no node data leaves the DB.
+        Formula mirrors ``persistent_graph.compute_decay_score``.
+        """
+        self._conn().execute(
+            """
+            MATCH (n:MemoryNode)
+            WITH n,
+                 (cast($now_ms as DOUBLE)
+                  - cast(to_epoch_ms(cast(n.last_accessed as TIMESTAMP)) as DOUBLE))
+                 / 3600000.0 AS hours_raw
+            WITH n,
+                 CASE WHEN hours_raw < 0.000278 THEN 0.000278
+                      ELSE hours_raw END AS hours
+            SET n.utility_score =
+                pow(1.0 - $rate, hours)
+                + CASE WHEN cast(n.access_count AS DOUBLE) / 20.0 < 1.0
+                       THEN cast(n.access_count AS DOUBLE) / 20.0
+                       ELSE 1.0 END
+            """,
+            parameters={
+                "now_ms": now_epoch_ms,
+                "rate": decay_rate,
+            },
+        )
+
+    def evict_by_score(self, threshold: float) -> list[str]:
+        """Delete nodes with utility_score below threshold, server-side.
+
+        Returns IDs of evicted nodes.
+        """
+        conn = self._conn()
+        # Collect IDs first (lightweight — no embeddings)
+        result = conn.execute(
+            """
+            MATCH (n:MemoryNode)
+            WHERE n.utility_score < $threshold
+            RETURN n.id
+            """,
+            parameters={"threshold": threshold},
+        )
+        ids = [row[0] for row in self._collect_rows(result)]
+        # Delete each (handles edge cleanup)
+        for nid in ids:
+            self.delete_node(nid)
+        return ids
+
     # --- Delete ---
 
     def delete_node(self, node_id: str) -> None:

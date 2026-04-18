@@ -173,6 +173,78 @@ async def test_update_utility(pgraph: PersistentGraph):
     assert updated.access_count == original_count + 1
 
 
+async def test_decay_all_server_side(pgraph: PersistentGraph):
+    """decay_all uses server-side Cypher and produces correct scores."""
+    from datetime import timedelta
+
+    n1 = _node("n1")
+    n1.last_accessed = n1.last_accessed - timedelta(hours=10)
+    n1.access_count = 5
+    await pgraph.add_node(n1)
+
+    n2 = _node("n2")
+    n2.last_accessed = n2.last_accessed - timedelta(hours=100)
+    n2.access_count = 25
+    await pgraph.add_node(n2)
+
+    await pgraph.decay_all()
+
+    r1 = await pgraph.get_node("n1")
+    r2 = await pgraph.get_node("n2")
+
+    # Verify via Python formula
+    from synap.persistent_graph import compute_decay_score
+
+    expected_1 = compute_decay_score(10.0, 5, pgraph._utility_decay_rate)
+    expected_2 = compute_decay_score(100.0, 25, pgraph._utility_decay_rate)
+
+    assert abs(r1.utility_score - expected_1) < 1e-6, (
+        f"n1: got {r1.utility_score}, expected {expected_1}"
+    )
+    assert abs(r2.utility_score - expected_2) < 1e-6, (
+        f"n2: got {r2.utility_score}, expected {expected_2}"
+    )
+
+
+def test_decay_formula_sync():
+    """Python compute_decay_score matches expected values across a spread of inputs."""
+    from synap.persistent_graph import compute_decay_score
+
+    cases = [
+        # (hours, access_count, rate, expected_decay, expected_freq)
+        (0.0, 0, 0.01),      # near-zero hours (clamped), zero access
+        (1.0, 10, 0.01),     # 1 hour, moderate access
+        (24.0, 20, 0.01),    # 1 day, saturated frequency
+        (168.0, 5, 0.01),    # 1 week
+        (720.0, 50, 0.01),   # 1 month, over-saturated
+    ]
+    import math
+    for hours, count, rate in cases:
+        result = compute_decay_score(hours, count, rate)
+        h = max(1.0 / 3600, hours)
+        expected = math.pow(1 - rate, h) + min(1.0, count / 20)
+        assert abs(result - expected) < 1e-12, (
+            f"hours={hours}, count={count}: got {result}, expected {expected}"
+        )
+
+
+async def test_evict_server_side(pgraph: PersistentGraph):
+    """evict uses server-side query and removes low-score nodes."""
+    n1 = _node("n1")
+    n1.utility_score = 0.05  # below threshold
+    await pgraph.add_node(n1)
+
+    n2 = _node("n2")
+    n2.utility_score = 0.5  # above threshold
+    await pgraph.add_node(n2)
+
+    evicted = await pgraph.evict(threshold=0.1)
+    assert "n1" in evicted
+    assert "n2" not in evicted
+    assert await pgraph.get_node("n1") is None
+    assert await pgraph.get_node("n2") is not None
+
+
 async def test_facade_with_kuzu_backend(tmp_path: Path):
     """Full integration: CognitiveMemory with Kùzu backend."""
     from tests.conftest import FakeEmbedder, FakeLLM
