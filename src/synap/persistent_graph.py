@@ -12,6 +12,18 @@ from synap.protocols import AsyncStorageBackend, StorageBackend
 from synap.types import MemoryEdge, MemoryNode, MemoryType
 
 
+def compute_decay_score(
+    hours_since_access: float,
+    access_count: int,
+    decay_rate: float = 0.01,
+) -> float:
+    """Canonical decay formula — must stay in sync with KuzuBackend.decay_all_scores Cypher."""
+    hours = max(1.0 / 3600, hours_since_access)
+    decay = math.pow(1 - decay_rate, hours)
+    frequency_bonus = min(1.0, access_count / 20)
+    return decay + frequency_bonus
+
+
 def _node_to_dict(node: MemoryNode) -> dict[str, Any]:
     return {
         "id": node.id,
@@ -216,13 +228,23 @@ class PersistentGraph:
             1.0,
             (datetime.now(timezone.utc) - node.created_at).total_seconds(),
         )
-        hours = seconds / 3600
-        decay = math.pow(1 - self._utility_decay_rate, hours)
-        frequency_bonus = min(1.0, node.access_count / 20)
-        node.utility_score = decay + frequency_bonus
+        node.utility_score = compute_decay_score(
+            seconds / 3600, node.access_count, self._utility_decay_rate
+        )
         await self._call(self._backend.save_node, _node_to_dict(node))
 
     async def decay_all(self) -> None:
+        # Server-side path: single Cypher SET, no data leaves the DB
+        if hasattr(self._backend, "decay_all_scores"):
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            await self._call(
+                self._backend.decay_all_scores,
+                self._utility_decay_rate,
+                now_ms,
+            )
+            return
+
+        # Fallback for backends without server-side decay
         now = datetime.now(timezone.utc)
         all_nodes = await self._call(
             self._backend.query_nodes, None, None, 100_000
@@ -231,13 +253,11 @@ class PersistentGraph:
         for d in all_nodes:
             node = _dict_to_node(d)
             seconds = max(1.0, (now - node.last_accessed).total_seconds())
-            hours = seconds / 3600
-            decay = math.pow(1 - self._utility_decay_rate, hours)
-            frequency_bonus = min(1.0, node.access_count / 20)
-            node.utility_score = decay + frequency_bonus
+            node.utility_score = compute_decay_score(
+                seconds / 3600, node.access_count, self._utility_decay_rate
+            )
             updated.append(_node_to_dict(node))
 
-        # Use batch save if available (single connection), fall back to per-node
         if hasattr(self._backend, "save_nodes_batch"):
             await self._call(self._backend.save_nodes_batch, updated)
         else:
@@ -245,6 +265,11 @@ class PersistentGraph:
                 await self._call(self._backend.save_node, d)
 
     async def evict(self, threshold: float = 0.1) -> list[str]:
+        # Server-side path: query only IDs below threshold, delete in DB
+        if hasattr(self._backend, "evict_by_score"):
+            return await self._call(self._backend.evict_by_score, threshold)
+
+        # Fallback for backends without server-side evict
         all_nodes = await self._call(
             self._backend.query_nodes, None, None, 100_000
         )
