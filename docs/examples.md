@@ -2,7 +2,7 @@
 
 ## Healthcare — Prior Authorization Agent
 
-A prior auth agent must follow regulatory procedures exactly. Skipping steps (like checking step therapy requirements) leads to incorrect determinations that cause downstream problems. Synap enforces the reasoning chain structurally.
+A prior auth agent must follow regulatory procedures exactly. Skipping steps (like checking step therapy requirements) leads to incorrect determinations that cause downstream problems. Synap enforces the reasoning chain through the output schema.
 
 ```python
 from synap import CognitiveMemory, CapacityHints, Procedure, EpisodeOutcome, SemanticMemory

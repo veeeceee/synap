@@ -13,9 +13,9 @@ Synap manages three types of memory — semantic, procedural, and episodic — o
 Most agent memory systems (Mem0, Letta, Zep, LangMem) are retrieval over text: store chunks, find similar chunks, splice them into the prompt. Synap is built differently:
 
 - Procedural memory uses output schemas rather than prompt instructions. Field order is reasoning order, so the model produces evidence before a conclusion without being told to "think step by step."
-- Semantic memory returns connected subgraphs, not a flat top-K list. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges from the matched node.
+- Semantic memory returns connected subgraphs rather than a flat top-K list. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges from the matched node.
 - When the consolidation engine sees a failure pattern repeat, it generates a new schema field and registers an amended procedure version.
-- Synap is a library, not a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit.
+- Synap is a library rather than a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit.
 
 ## Installation
 

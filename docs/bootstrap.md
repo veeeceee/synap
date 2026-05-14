@@ -2,9 +2,9 @@
 
 Synap needs some initial data to be useful. Without it, semantic retrieval returns nothing, no procedures exist, and the system can't enforce reasoning order. The bootstrap system solves this cold start problem.
 
-## Principle: Assisted, Not Autonomous
+## Principle: Assisted Bootstrapping
 
-The LLM drafts structured memory from unstructured input. You review and accept. A wrong initial graph is worse than an empty one — it actively misleads retrieval.
+The LLM drafts structured memory from unstructured input, and you review and accept what gets stored. A wrong initial graph is worse than an empty one because it actively misleads retrieval.
 
 ## Setup
 
@@ -163,7 +163,7 @@ Each log entry needs at minimum:
 
 Recommended sequence:
 
-1. **Procedures first** — register the task types your agent handles. This gives you output-side enforcement immediately.
+1. **Procedures first** — register the task types your agent handles. The output schemas take effect immediately.
 2. **Semantic second** — extract knowledge from existing documents. This gives retrieval something to work with.
 3. **Episodic last (optional)** — import historical logs if you have them. Otherwise, let it build organically.
 

@@ -286,7 +286,7 @@ await memory.episodic.record(Episode(
 
 ### await recall(cue, task_type=None, outcome_filter=None, max_episodes=3, capacity=None) → list[Episode]
 
-Reconstructive retrieval. Failures are boosted (1.5x) because they carry more learning signal.
+Reconstructive retrieval. Failures are weighted 1.5x during retrieval because they are more informative for future calls.
 
 ```python
 episodes = await memory.episodic.recall(

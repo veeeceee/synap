@@ -2,13 +2,13 @@
 
 ## The Problem
 
-LLM agents treat memory as a retrieval problem: find relevant things, stuff them in the prompt. This fails for two structural reasons:
+LLM agents typically treat memory as a retrieval problem: find relevant things, put them in the prompt. This fails for two reasons:
 
-1. **Attention is zero-sum.** Every token in context competes for the model's attention budget. More context = worse per-token attention = worse reasoning. This is the transformer architecture, not a bug.
+1. Attention is zero-sum. Every token in context competes for the model's attention budget, so more context produces worse per-token attention and worse reasoning. That is how transformer architectures work.
 
-2. **Retrieval is input-side only.** RAG optimizes what goes *into* the prompt but can't shape what comes *out*. Pattern matching in the weights overrides instructions in the context because weight activations are cheap while sustained attention on distant tokens is expensive.
+2. Retrieval only shapes the input. RAG controls what goes into the prompt but cannot shape what comes out of it. Pattern matching in the weights overrides instructions in the context, because weight activations are cheap while sustained attention on distant tokens is expensive.
 
-Synap resolves this by making memory **structurally selective** (graph traversal returns specific nodes, not text blobs) and enforcing procedures on the **output side** (schemas force reasoning order, not instructions).
+Synap addresses both. Graph traversal returns specific nodes rather than text blobs. Output schemas, rather than instructions in the prompt, dictate the order in which the model produces fields.
 
 ## Three Memory Subsystems
 
@@ -29,9 +29,9 @@ The built-in `SemanticMemory` implements this protocol as a generic knowledge gr
 [physical therapy 6 weeks] --precedes--> [surgical authorization]
 ```
 
-**Retrieval:** Graph traversal from entry points, not flat similarity search. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges, returning a connected subgraph. Unrelated facts — even if embedding-similar — are excluded by topology.
+Retrieval happens by graph traversal from entry points rather than flat similarity search. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges and returns a connected subgraph. Unrelated facts are excluded by topology, even when their embeddings are similar.
 
-**Why this matters:** RAG returns the top-K similar chunks. Graph traversal returns a *connected subgraph* where relationships are explicit. Token cost scales with graph connectivity, not corpus size.
+Token cost scales with graph connectivity rather than corpus size. RAG returns the top-K similar chunks; graph traversal returns a subgraph in which relationships are explicit.
 
 Projects with domain-specific types replace `SemanticMemory` with a custom adapter that implements `SemanticDomain`. The adapter works with its own types internally and serializes to `DomainResult` at the boundary — text content, relevance score, source ID, and opaque metadata.
 
@@ -39,7 +39,7 @@ Projects with domain-specific types replace `SemanticMemory` with a custom adapt
 
 A registry of task types mapped to output schemas that enforce reasoning order.
 
-The key mechanism: **procedural memory doesn't inject instructions into the prompt**. It produces an output schema where field ordering *is* the procedure. The model must generate intermediate reasoning fields before conclusions, and each generated field conditions the next through recency bias in attention.
+Procedural memory does not inject instructions into the prompt. It produces an output schema in which field order is the procedure. The model has to generate intermediate reasoning fields before conclusions, and each generated field conditions the next through recency bias in attention.
 
 ```python
 Procedure(
@@ -59,8 +59,6 @@ Procedure(
 
 Without this schema, the model jumps straight to `determination` based on pattern matching in the weights ("expensive procedure + chronic condition" → deny). With the schema, it must generate `clinical_evidence_met` first, which becomes high-attention context that conditions the determination.
 
-**The procedure is enforced structurally, not instructionally.**
-
 ### Episodic Memory — What the agent has experienced
 
 A cue-tag-content graph of past agent experiences with outcomes.
@@ -70,7 +68,7 @@ Each episode is a small subgraph:
 - **Content node** — what happened (agent output, intermediate steps)
 - **Outcome node** — result (success, failure, corrected)
 
-**Retrieval is reconstructive, not flat.** The system traverses from a cue through content to outcomes, building a narrative. Failed episodes are prioritized because they carry more learning signal.
+Retrieval is reconstructive: the system traverses from a cue through content to outcomes, building a narrative. Failed episodes are prioritized during retrieval because they are more informative for future calls.
 
 ```python
 # When the agent is about to make a similar call:
@@ -79,27 +77,27 @@ ctx = await memory.prepare_call("Determine prior auth for lumbar fusion")
 # ctx.few_shot_examples = [successful prior auth for similar case]
 ```
 
-**Tool call tracking.** Episodes can include structured records of tool invocations — which MCP server, tool, parameters, result, and success status. This data is serialized into the content node (so the LLM sees it during consolidation) and used for pattern detection. When `find_patterns` detects a tool failing repeatedly across episodes, it surfaces a tool-specific failure pattern that triggers procedural amendments (e.g., "tool X requires parameter Y" or "use tool Z instead of X for this task type").
+Episodes can also include structured records of tool invocations: which MCP server, tool, parameters, result, and success status. This data is serialized into the content node (so the LLM sees it during consolidation) and used for pattern detection. When `find_patterns` detects a tool failing repeatedly across episodes, it surfaces a tool-specific failure pattern that triggers procedural amendments (for example, "tool X requires parameter Y" or "use tool Z instead of X for this task type").
 
-## Budget is Emergent
+## Budget Allocation
 
-There is no explicit budget allocator dividing tokens across subsystems. Instead, each subsystem's data structure produces inherently selective retrieval:
+There is no explicit budget allocator dividing tokens across subsystems. Each subsystem's data structure produces selective retrieval on its own:
 
 | Subsystem | Structure | Why it's selective |
 |---|---|---|
 | Semantic | Domain adapter (graph, custom store, etc.) | Adapter returns only relevant domain knowledge |
 | Procedural | Schema registry | Output schema reshapes the call, near-zero prompt tokens |
-| Episodic | Cue-tag-content graph | Reconstructive retrieval pulls specific episodes, not logs |
+| Episodic | Cue-tag-content graph | Reconstructive retrieval returns specific episodes rather than log dumps |
 
-The token budget stays small because the structures don't return documents — they return traversal results.
+The token budget stays small because each subsystem returns traversal results rather than documents.
 
 ## Consolidation
 
 Memory evolves through consolidation: episodic experiences become domain knowledge, repeated patterns become procedural amendments, stale memories decay and evict.
 
-Consolidation writes go through the domain adapter's `absorb()` method — the domain decides the shape of stored knowledge, not the consolidation engine.
+Consolidation writes go through the domain adapter's `absorb()` method, so the domain decides the shape of stored knowledge rather than the consolidation engine.
 
-Three triggers, one pathway:
+The triggers are:
 
 | Trigger | When | Example |
 |---|---|---|
@@ -131,7 +129,7 @@ The active procedure is always the one with no incoming `supersedes` edge.
 
 ## The Shared Graph
 
-All three subsystems operate on a single graph — a typed property graph where nodes are partitioned by type but edges can cross partitions. This is how consolidation creates links between episodic experiences and domain facts without a separate join mechanism.
+All three subsystems operate on a single typed property graph. Nodes are partitioned by type, but edges can cross partitions, which is what lets consolidation link episodic experiences to domain facts directly.
 
 ```
 [episodic: "failed auth for knee replacement"]
@@ -185,7 +183,7 @@ memory = CognitiveMemory(domain=domain, embedding_provider=embedder, llm_provide
 
 ## Provider Model
 
-Synap is a library, not a framework. It doesn't own the agent loop, call the LLM for you, or manage conversation history. You provide two required dependencies:
+Synap is a library rather than a framework. It does not own the agent loop, does not call the LLM for you, and does not manage conversation history. You provide two required dependencies:
 
 - **`EmbeddingProvider`** — embeds text for entry-point matching in the graph
 - **`LLMProvider`** — generates text for consolidation and bootstrapping (never for retrieval)
@@ -201,7 +199,7 @@ class LLMProvider(Protocol):
 
 Both protocols are async. Storage backends stay synchronous (embedded DBs don't benefit from async); `PersistentGraph` bridges with `asyncio.to_thread`.
 
-The library prepares context (`prepare_call`) and records outcomes (`record_outcome`). Everything else — the agent loop, tool calling, the LLM client — is yours.
+The library prepares context (`prepare_call`) and records outcomes (`record_outcome`). The agent loop, tool calling, and the LLM client are your responsibility.
 
 ## Domain Adapters
 
