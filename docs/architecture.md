@@ -16,7 +16,7 @@ Synap resolves this by making memory **structurally selective** (graph traversal
 
 Domain knowledge, pluggable via the `SemanticDomain` protocol.
 
-Every project brings its own knowledge types — contradictions and forces for geopolitical analysis, clinical policies for healthcare, code patterns for dev tools. Synap doesn't prescribe the shape of domain knowledge. Instead, it defines a protocol with two methods:
+Every project brings its own knowledge types — case law and statutes for legal research, clinical policies for healthcare, code patterns for dev tools. Synap doesn't prescribe the shape of domain knowledge. Instead, it defines a protocol with two methods:
 
 - **`retrieve(task_description, ...)`** — return domain knowledge relevant to a task
 - **`absorb(insights, source_episodes, ...)`** — store consolidated insights in your domain's schema
@@ -222,4 +222,4 @@ class SemanticDomain(Protocol):
 
 `SemanticMemory` is the built-in generic implementation — text nodes with embeddings and graph traversal. Use it to get started, replace it when your domain needs custom types.
 
-Custom adapters work with their own types internally (Forces, Contradictions, clinical policies, etc.) and serialize to `DomainResult` at the boundary. The information loss from collapsing domain types to text is minimal because text is the LLM interface — what the model receives is always text.
+Custom adapters work with their own types internally (Case, Statute, clinical policies, etc.) and serialize to `DomainResult` at the boundary. The information loss from collapsing domain types to text is minimal because text is the LLM interface — what the model receives is always text.

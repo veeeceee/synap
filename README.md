@@ -207,7 +207,7 @@ graph = PersistentGraph(backend=backend)
 
 ## How It Works
 
-**Semantic memory** is pluggable via the `SemanticDomain` protocol. The built-in `SemanticMemory` stores facts as a knowledge graph and retrieves via graph traversal. Projects with domain-specific types (contradictions, policies, etc.) implement the protocol directly.
+**Semantic memory** is pluggable via the `SemanticDomain` protocol. The built-in `SemanticMemory` stores facts as a knowledge graph and retrieves via graph traversal. Projects with domain-specific types (cases, statutes, policies, etc.) implement the protocol directly.
 
 **Procedural memory** maps task types to output schemas. Field order is the order the model fills them in, so intermediate reasoning lands in the response before the conclusion does.
 
