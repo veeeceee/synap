@@ -6,16 +6,16 @@
 
 Cognitive memory architecture for LLM agents.
 
-Synap manages three types of memory — semantic, procedural, and episodic — backed by a shared typed property graph. It resolves the fundamental memory-vs-attention contradiction in transformer-based models: more context degrades reasoning quality. Instead of stuffing everything into the prompt, Synap uses structurally selective retrieval (similarity search finds entry points, then graph traversal returns connected subgraphs instead of flat ranked lists) and output-side enforcement (procedures become output schemas, not instructions).
+Synap manages three types of memory — semantic, procedural, and episodic — over a shared typed property graph. Long prompts degrade reasoning quality, so the goal is to give the agent only what it needs for the task at hand. Retrieval finds entry points by vector similarity, then traverses the graph to pull in related nodes. Procedures are encoded as output schemas rather than as instructions in the prompt.
 
 ## How is this different?
 
-Most agent memory systems (Mem0, Letta, Zep, LangMem) treat memory as a retrieval problem — store text, find similar text, put it in the prompt. Synap takes a different position:
+Most agent memory systems (Mem0, Letta, Zep, LangMem) are retrieval over text: store chunks, find similar chunks, splice them into the prompt. Synap is built differently:
 
-- **Structural enforcement, not instructions.** Procedural memory produces output schemas where field ordering *is* the reasoning procedure. The model must generate evidence before conclusions — enforced by the schema, not by telling it to "think step by step."
-- **Graph traversal, not flat retrieval.** Semantic memory returns connected subgraphs where relationships are explicit. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges, not just the top-K similar chunks.
-- **Self-amending procedures.** When the same failure pattern repeats, the consolidation engine generates a new schema field and registers an amended procedure version. The system structurally prevents the mistake from recurring.
-- **Precision over convenience.** Synap is a library, not a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit and auditable.
+- Procedural memory uses output schemas rather than prompt instructions. Field order is reasoning order, so the model produces evidence before a conclusion without being told to "think step by step."
+- Semantic memory returns connected subgraphs, not a flat top-K list. A query about "lumbar fusion requirements" traverses `requires` and `includes` edges from the matched node.
+- When the consolidation engine sees a failure pattern repeat, it generates a new schema field and registers an amended procedure version.
+- Synap is a library, not a managed service. You own the agent loop, the LLM client, and the embedding provider. Memory operations are explicit.
 
 ## Installation
 
@@ -63,7 +63,7 @@ class OpenAILLM:
         return response.choices[0].message.content
 ```
 
-Any class matching the `EmbeddingProvider` and `LLMProvider` protocols works — no inheritance required. See [docs/architecture.md](docs/architecture.md#provider-model) for details.
+Any class matching the `EmbeddingProvider` and `LLMProvider` protocols works. No inheritance required. See [docs/architecture.md](docs/architecture.md#provider-model) for details.
 
 ## Quick Start
 
@@ -134,7 +134,7 @@ await memory.record_outcome(
 
 ## Domain Adapters
 
-Synap's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types — clinical policies for healthcare, code patterns for dev tools, schema rules for data pipelines.
+Synap's semantic layer is pluggable via the `SemanticDomain` protocol. Every project brings its own knowledge types: clinical policies for healthcare, code patterns for dev tools, schema rules for data pipelines.
 
 ```python
 from synap.protocols import SemanticDomain
@@ -152,7 +152,7 @@ class MyDomain:
         return "domain_node_id"
 ```
 
-`SemanticMemory` is the built-in generic implementation — text nodes with embeddings and graph traversal. Use it to get started, replace it when your domain needs custom types.
+`SemanticMemory` is the built-in generic implementation: text nodes with embeddings and graph traversal. Use it to get started, replace it when your domain needs custom types.
 
 ## Persistence
 
@@ -207,13 +207,13 @@ graph = PersistentGraph(backend=backend)
 
 ## How It Works
 
-**Semantic memory** is pluggable via the `SemanticDomain` protocol. The built-in `SemanticMemory` stores facts as a knowledge graph with retrieval via graph traversal. Projects with domain-specific types (contradictions, policies, etc.) implement the protocol directly.
+**Semantic memory** is pluggable via the `SemanticDomain` protocol. The built-in `SemanticMemory` stores facts as a knowledge graph and retrieves via graph traversal. Projects with domain-specific types (contradictions, policies, etc.) implement the protocol directly.
 
-**Procedural memory** maps task types to output schemas where field ordering *is* the procedure. The model must generate intermediate reasoning before conclusions. Enforced structurally, not instructionally.
+**Procedural memory** maps task types to output schemas. Field order is the order the model fills them in, so intermediate reasoning lands in the response before the conclusion does.
 
-**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are boosted during retrieval (more learning signal). Over time, repeated patterns consolidate into domain knowledge or procedural amendments. Episodes can include structured **tool call tracking** — which MCP server, tool, parameters, and result — enabling consolidation to detect tool usage patterns (wrong tool selection, parameter malformation) and generate procedural amendments.
+**Episodic memory** records agent experiences as cue→content→outcome subgraphs. Failed episodes are weighted higher during retrieval. Over time, repeated patterns consolidate into domain knowledge or procedural amendments. Episodes can include tool call tracking (MCP server, tool, parameters, result), so consolidation can detect tool usage patterns like wrong tool selection or malformed parameters and generate procedural amendments.
 
-All three operate on a shared typed property graph. Edges cross partitions — this is how consolidation links episodic experiences to domain facts without a separate join mechanism.
+All three live on the same typed property graph. Edges cross partitions, which is what lets consolidation link episodic experiences to domain facts without a separate join step.
 
 ## Async-First
 
