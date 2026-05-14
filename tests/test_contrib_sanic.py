@@ -12,6 +12,9 @@ from __future__ import annotations
 import uuid
 
 import pytest
+
+pytest.importorskip("sanic")
+
 from sanic import Sanic
 
 from synap.facade import CognitiveMemory

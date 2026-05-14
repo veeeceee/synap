@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
 from synap.facade import CognitiveMemory
 from synap.graph import MemoryGraph
 from synap.semantic import SemanticMemory
